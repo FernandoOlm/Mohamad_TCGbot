@@ -31,6 +31,7 @@ import {
   getSessaoAtiva,
   computeOptionHash,
 } from "./leilaoManager.js";
+import { atualizarMapeamento, idsMatch } from "../utils/userMapper.js";
 
 // Configuração de diretórios
 const __filename = fileURLToPath(import.meta.url);
@@ -343,6 +344,11 @@ async function processarVotoEnqueteUpdate(update) {
       || update.key.participant
       || "unknown";
 
+    // Mapear LID <-> PN se ambos estiverem disponíveis na mensagem de voto
+    if (pollUpdate.pollUpdateMessageKey?.participant && update.key.participant) {
+       atualizarMapeamento(pollUpdate.pollUpdateMessageKey.participant, update.key.participant);
+    }
+
     const vote = pollUpdate.vote;
 
     if (vote && vote.selectedOptions && vote.selectedOptions.length > 0) {
@@ -401,8 +407,21 @@ async function startBot_Unique01() {
 
   // Evento de entrada no grupo
   sock.ev.on("group-participants.update", async (update) => {
-    if (update.action !== "add") return;
     const grupoId = update.id;
+
+    // Mapear LID <-> PN para todos os participantes (sempre que houver atualização)
+    try {
+      const meta = await sock.groupMetadata(grupoId);
+      for (const p of meta.participants) {
+        const lid = p.id.replace(/@.*/, "");
+        // No Baileys v6.7, se houver PN disponível, ele estará no objeto participante
+        if (p.id && p.lid) {
+           atualizarMapeamento(p.lid.replace(/@.*/, ""), p.id.replace(/@.*/, ""));
+        }
+      }
+    } catch (e) {}
+
+    if (update.action !== "add") return;
 
     for (const usuario of update.participants) {
       try {
@@ -580,7 +599,7 @@ async function processarMensagem(msg, sock, upsertType) {
       if (cfg) {
         const meta = isGroup ? await sock.groupMetadata(jid) : null;
         const isAdmin = isGroup ? meta.participants.some(p => p.id.replace(/@.*/, "") === fromClean && (p.admin === "admin" || p.admin === "superadmin")) : false;
-        const isRoot = fromClean === ROOT;
+        const isRoot = idsMatch(fromClean, ROOT);
 
         if (cfg.admin && !isAdmin && !isRoot) {
           await sock.sendMessage(jid, { text: "Sem permissão." });

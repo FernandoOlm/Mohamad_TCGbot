@@ -121,6 +121,10 @@
         {
           "cmd": "!cancelar-leilao",
           "desc": "Cancela o leilao sem gerar relatorios (ROOT)."
+        },
+        {
+          "cmd": "!config-msg-leilao [mensagem]",
+          "desc": "Configura a mensagem de pagamento enviada no relatorio do comprador. Ex: !config-msg-leilao Pix: 11999 (Fernando)"
         }
       ]
     },

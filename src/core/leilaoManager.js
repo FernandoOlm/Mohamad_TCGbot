@@ -11,6 +11,7 @@ const DATA_DIR = path.resolve(__dirname, "../data");
 const LEILOES_PATH = path.join(DATA_DIR, "leiloes_ativos.json");
 const HISTORICO_PATH = path.join(DATA_DIR, "historico_leiloes.json");
 const MESSAGE_STORE_PATH = path.join(DATA_DIR, "message_store.json");
+const CONFIG_LEILAO_PATH = path.join(DATA_DIR, "config_leilao.json");
 
 // ============================================================
 // MESSAGE STORE — Armazena mensagens de poll para decryption
@@ -74,6 +75,53 @@ function loadMessageStore() {
     }
   } catch {}
   return {};
+}
+
+// ============================================================
+// CONFIGURAÇÃO DE MENSAGEM DE LEILÃO POR GRUPO
+// ============================================================
+function loadConfigLeilao() {
+  try {
+    if (fs.existsSync(CONFIG_LEILAO_PATH)) {
+      return JSON.parse(fs.readFileSync(CONFIG_LEILAO_PATH, "utf8"));
+    }
+  } catch {}
+  return {};
+}
+
+function saveConfigLeilao(data) {
+  try {
+    fs.writeFileSync(CONFIG_LEILAO_PATH, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("❌ [LEILÃO] Erro ao salvar config:", e.message);
+  }
+}
+
+/**
+ * Define a mensagem de pagamento personalizada para o grupo.
+ */
+export function setMsgPagamento(groupJid, mensagem) {
+  const config = loadConfigLeilao();
+  if (!config[groupJid]) config[groupJid] = {};
+  config[groupJid].msgPagamento = mensagem;
+  saveConfigLeilao(config);
+  return true;
+}
+
+/**
+ * Obtém a mensagem de pagamento do grupo (ou padrão).
+ */
+export function getMsgPagamento(groupJid) {
+  const config = loadConfigLeilao();
+  return config[groupJid]?.msgPagamento || "Procura o admin pra acertar o pagamento!";
+}
+
+/**
+ * Retorna a config completa do grupo.
+ */
+export function getConfigLeilao(groupJid) {
+  const config = loadConfigLeilao();
+  return config[groupJid] || {};
 }
 
 // ============================================================
@@ -249,11 +297,14 @@ export function registrarVotosAgregados(groupJid, pollMsgId, votesAgregados) {
 /**
  * Registra um voto individual via fallback (hash bruto).
  * Usado quando getAggregateVotesInPollMessage não funciona.
+ * 
+ * CORREÇÃO SESSÃO CRUZADA: Agora valida ESTRITAMENTE que o groupJid
+ * corresponde à sessão correta. Não busca mais em "qualquer sessão".
  */
 export function registrarVotoFallback(groupJid, pollMsgId, voterJid, selectedOptionHashes) {
   const db = loadLeiloes();
 
-  // Se groupJid foi passado, tenta direto
+  // CORREÇÃO: Buscar APENAS no grupo correto primeiro
   if (groupJid) {
     const sessao = db.sessoes[groupJid];
     if (sessao && sessao.status === "ativo" && sessao.enquetes[pollMsgId]) {
@@ -261,9 +312,11 @@ export function registrarVotoFallback(groupJid, pollMsgId, voterJid, selectedOpt
     }
   }
 
-  // Tenta achar em qualquer sessão ativa
+  // Fallback: buscar em outras sessões APENAS pelo pollMsgId
+  // (necessário porque o groupJid pode vir errado do Baileys)
   for (const [gJid, s] of Object.entries(db.sessoes)) {
     if (s.status === "ativo" && s.enquetes[pollMsgId]) {
+      console.log(`🔄 [LEILÃO] Voto redirecionado: grupo informado ${groupJid} → grupo correto ${gJid}`);
       return registrarVotoFallbackInterno(db, gJid, pollMsgId, voterJid, selectedOptionHashes);
     }
   }
@@ -499,60 +552,106 @@ export function formatarReais(valor) {
 }
 
 // ============================================================
-// GERAÇÃO DE RELATÓRIOS (TEXTO)
+// DELAY HUMANIZADO — Simula comportamento humano
+// ============================================================
+
+/**
+ * Gera um delay aleatório entre min e max milissegundos.
+ */
+export function delayHumano(minMs = 800, maxMs = 2500) {
+  const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Delay longo entre blocos de envio (30 a 50 segundos).
+ */
+export function delayEntreBloco() {
+  const minSeg = 30;
+  const maxSeg = 50;
+  const ms = Math.floor(Math.random() * ((maxSeg - minSeg) * 1000 + 1)) + (minSeg * 1000);
+  console.log(`⏳ [LEILÃO] Aguardando ${(ms / 1000).toFixed(1)}s antes do próximo bloco...`);
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ============================================================
+// GERAÇÃO DE RELATÓRIOS (TEXTO) — FORMATO HUMANIZADO
 // ============================================================
 
 /**
  * Gera a mensagem de anúncio público para o grupo.
+ * Envia em BLOCOS de até 5 itens para parecer humano.
  */
-export function gerarAnuncioGrupo(dadosEncerramento) {
+export function gerarAnuncioGrupoBlocos(dadosEncerramento) {
   const { resultados, itensSemLance } = dadosEncerramento;
 
-  if (resultados.length === 0) {
-    return {
+  if (resultados.length === 0 && itensSemLance.length === 0) {
+    return [{
       texto: "🔨 *LEILÃO ENCERRADO!* 🔨\n\nNenhum item recebeu lance. Que vacilo, galera!",
       mentions: [],
-    };
+    }];
   }
 
-  let texto = "🔨 *LEILÃO ENCERRADO!* 🔨\n\n";
-  const mentions = [];
+  const blocos = [];
+  const TAMANHO_BLOCO = 5;
 
-  for (const r of resultados) {
-    texto += `📦 *Item:* ${r.descricao}\n`;
-    texto += `💰 *Lance Vencedor:* ${r.valorTexto}\n`;
-    texto += `🏆 *Ganhador:* @${r.vencedorNumero}\n\n`;
-    if (!mentions.includes(r.vencedorJid)) {
-      mentions.push(r.vencedorJid);
+  // Bloco de abertura
+  blocos.push({
+    texto: `🔨 *LEILÃO ENCERRADO!* 🔨\n\n📦 *${resultados.length}* itens arrematados | ❌ *${itensSemLance.length}* sem lance\n\nConfira os resultados:`,
+    mentions: [],
+  });
+
+  // Blocos de resultados (5 itens por bloco)
+  for (let i = 0; i < resultados.length; i += TAMANHO_BLOCO) {
+    const bloco = resultados.slice(i, i + TAMANHO_BLOCO);
+    let texto = "";
+    const mentions = [];
+
+    for (const r of bloco) {
+      texto += `📦 *${r.descricao}*\n`;
+      texto += `💰 ${r.valorTexto} — 🏆 @${r.vencedorNumero}\n\n`;
+      if (!mentions.includes(r.vencedorJid)) {
+        mentions.push(r.vencedorJid);
+      }
     }
+
+    blocos.push({ texto: texto.trim(), mentions });
   }
 
+  // Bloco de itens sem lance (se houver)
   if (itensSemLance.length > 0) {
-    texto += "❌ *Itens sem lance:*\n";
+    let texto = "❌ *Itens sem lance:*\n";
     for (const item of itensSemLance) {
-      texto += `  - ${item}\n`;
+      texto += `  • ${item}\n`;
     }
-    texto += "\n";
+    blocos.push({ texto: texto.trim(), mentions: [] });
   }
 
-  texto += "Relatórios individuais enviados no PV!";
+  // Bloco final
+  blocos.push({
+    texto: "Relatórios individuais enviados no PV! 📩",
+    mentions: [],
+  });
 
-  return { texto, mentions };
+  return blocos;
 }
 
 /**
  * Gera a mensagem de relatório individual para o comprador (PV).
+ * Usa a mensagem de pagamento configurável.
  */
-export function gerarRelatorioComprador(voterJid, compras, grupoNome) {
+export function gerarRelatorioComprador(voterJid, compras, grupoNome, msgPagamento) {
+  const msg = msgPagamento || "Procura o admin pra acertar o pagamento!";
+
   let texto = `🎉 Você arrematou itens no leilão do grupo *${grupoNome}*.\n\n`;
-  texto += "*Aqui tá o seu resumo:*\n";
+  texto += "Aqui tá o seu resumo:\n";
 
   compras.itens.forEach((item, i) => {
     texto += `${i + 1}. ${item.descricao} — ${item.valorTexto}\n`;
   });
 
   texto += `\n💵 *Total a pagar:* *${formatarReais(compras.total)}*\n\n`;
-  texto += "Procura o admin pra acertar o pagamento!";
+  texto += msg;
 
   return texto;
 }
@@ -587,7 +686,7 @@ export function gerarRelatorioAdmin(dadosEncerramento, grupoNome) {
       mentions.push(voterJid);
 
       for (const item of compras.itens) {
-        texto += `  • ${item.descricao} (${item.valorTexto})\n`;
+        texto += `  ${item.descricao} — ${item.valorTexto}\n`;
       }
       texto += `  *Subtotal:* ${formatarReais(compras.total)}\n\n`;
     }
@@ -608,6 +707,21 @@ export function gerarRelatorioAdmin(dadosEncerramento, grupoNome) {
   return { texto, mentions };
 }
 
+// ============================================================
+// FUNÇÕES LEGADAS (mantidas para compatibilidade)
+// ============================================================
+
+/**
+ * Gera anúncio de grupo em formato único (legado).
+ */
+export function gerarAnuncioGrupo(dadosEncerramento) {
+  const blocos = gerarAnuncioGrupoBlocos(dadosEncerramento);
+  // Junta tudo em uma mensagem só (fallback)
+  const texto = blocos.map(b => b.texto).join("\n\n");
+  const mentions = [...new Set(blocos.flatMap(b => b.mentions))];
+  return { texto, mentions };
+}
+
 export default {
   storeMessage,
   getStoredMessage,
@@ -622,9 +736,15 @@ export default {
   cancelarSessao,
   encerrarSessao,
   gerarAnuncioGrupo,
+  gerarAnuncioGrupoBlocos,
   gerarRelatorioComprador,
   gerarRelatorioAdmin,
   formatarReais,
   extrairValorNumerico,
+  setMsgPagamento,
+  getMsgPagamento,
+  getConfigLeilao,
+  delayHumano,
+  delayEntreBloco,
 };
 // FIM leilaoManager.js

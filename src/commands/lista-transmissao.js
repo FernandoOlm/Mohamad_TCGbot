@@ -14,6 +14,7 @@
 
 import fs from "fs";
 import path from "path";
+import { idsMatch } from "../utils/userMapper.js";
 
 const AUTH_PATH = path.resolve("src/data/auth/allowed.json");
 const LISTAS_PATH = path.resolve("src/data/listas_transmissao.json");
@@ -41,24 +42,6 @@ function normalizarId(raw) {
   let digits = raw.replace(/\D/g, "");
   if (digits.length > 15) digits = digits.slice(-15);
   return digits;
-}
-
-/**
- * Compara dois IDs de forma flexível.
- * O WhatsApp usa LID (ex: 65060886032554) e PN (ex: 554792671477)
- * que são formatos diferentes para o mesmo usuário.
- * Compara exato, sufixo (últimos 10 dígitos) e o fromClean bruto.
- */
-function idsMatch(id1, id2) {
-  if (!id1 || !id2) return false;
-  const n1 = normalizarId(id1);
-  const n2 = normalizarId(id2);
-  if (n1 === n2) return true;
-  // Comparação por sufixo (últimos 10 dígitos) — cobre LID vs PN
-  const suffix1 = n1.slice(-10);
-  const suffix2 = n2.slice(-10);
-  if (suffix1.length >= 10 && suffix2.length >= 10 && suffix1 === suffix2) return true;
-  return false;
 }
 
 /**

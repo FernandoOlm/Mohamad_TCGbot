@@ -237,7 +237,7 @@
   "!numeros-disponiveis": {
     "file": "../commands/numeros-disponiveis.js",
     "function": "numerosDisponiveis",
-    "admin": false
+    "admin": true
   },
 
   "!restart": {
@@ -304,36 +304,41 @@
     "function": "comandoCancelarLeilao",
     "admin": true
   },
+  "!config-msg-leilao": {
+    "file": "../commands/leilao.js",
+    "function": "comandoConfigMsgLeilao",
+    "admin": true
+  },
 
   "!listar-grupos": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoListarGrupos",
-    "admin": false
+    "admin": true
   },
   "!criar-lista": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoCriarListaTransmissao",
-    "admin": false
+    "admin": true
   },
   "!ver-listas": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoVerListas",
-    "admin": false
+    "admin": true
   },
   "!enviar-lista": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoEnviarLista",
-    "admin": false
+    "admin": true
   },
   "!editar-lista": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoEditarLista",
-    "admin": false
+    "admin": true
   },
   "!apagar-lista": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoApagarLista",
-    "admin": false
+    "admin": true
   }
 
 }

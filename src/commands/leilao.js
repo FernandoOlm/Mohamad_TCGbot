@@ -8,10 +8,15 @@ import {
   cancelarSessao,
   encerrarSessao,
   storeMessage,
-  gerarAnuncioGrupo,
+  gerarAnuncioGrupoBlocos,
   gerarRelatorioComprador,
   gerarRelatorioAdmin,
   formatarReais,
+  setMsgPagamento,
+  getMsgPagamento,
+  getConfigLeilao,
+  delayHumano,
+  delayEntreBloco,
 } from "../core/leilaoManager.js";
 
 // ============================================================
@@ -109,6 +114,7 @@ export async function comandoEnquete(msg, sock, from, args) {
 
 // ============================================================
 // !encerrar-leilao — Encerra a sessão e gera relatórios
+// Envio HUMANIZADO: blocos de 5 itens + delay 30-50s entre blocos
 // ============================================================
 export async function comandoEncerrarLeilao(msg, sock, from, args) {
   const jid = msg.key.remoteJid;
@@ -144,29 +150,65 @@ export async function comandoEncerrarLeilao(msg, sock, from, args) {
     return "❌ Erro ao encerrar o leilão...";
   }
 
+  // Obter mensagem de pagamento configurada
+  const msgPagamento = getMsgPagamento(jid);
+
   try {
-    // 1. ENVIAR ANÚNCIO NO GRUPO
-    const anuncio = gerarAnuncioGrupo(dados);
-    await sock.sendMessage(jid, {
-      text: anuncio.texto,
-      mentions: anuncio.mentions,
-    });
+    // ============================================================
+    // 1. ENVIAR ANÚNCIO NO GRUPO — EM BLOCOS HUMANIZADOS
+    // ============================================================
+    const blocos = gerarAnuncioGrupoBlocos(dados);
 
-    // 2. ENVIAR RELATÓRIO INDIVIDUAL PARA CADA COMPRADOR (PV)
-    for (const [voterJid, compras] of Object.entries(dados.comprasPorPessoa)) {
-      try {
-        const textoComprador = gerarRelatorioComprador(voterJid, compras, grupoNome);
-        await sock.sendMessage(voterJid, { text: textoComprador });
-        console.log(`📩 [LEILÃO] Relatório enviado para comprador: ${voterJid}`);
+    for (let i = 0; i < blocos.length; i++) {
+      const bloco = blocos[i];
+      
+      await sock.sendMessage(jid, {
+        text: bloco.texto,
+        mentions: bloco.mentions,
+      });
 
-        // Pequeno delay para evitar rate limit do WhatsApp
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      } catch (e) {
-        console.error(`⚠️ [LEILÃO] Erro ao enviar relatório para ${voterJid}:`, e.message);
+      // Delay humanizado entre mensagens do grupo (2-5 segundos)
+      if (i < blocos.length - 1) {
+        await delayHumano(2000, 5000);
       }
     }
 
+    console.log(`📢 [LEILÃO] Anúncio enviado no grupo em ${blocos.length} blocos`);
+
+    // ============================================================
+    // 2. ENVIAR RELATÓRIOS INDIVIDUAIS PARA COMPRADORES (PV)
+    //    Em blocos de 5 com delay de 30-50s entre blocos
+    // ============================================================
+    const compradores = Object.entries(dados.comprasPorPessoa);
+    const BLOCO_COMPRADORES = 5;
+
+    for (let i = 0; i < compradores.length; i++) {
+      const [voterJid, compras] = compradores[i];
+
+      try {
+        const textoComprador = gerarRelatorioComprador(voterJid, compras, grupoNome, msgPagamento);
+        await sock.sendMessage(voterJid, { text: textoComprador });
+        console.log(`📩 [LEILÃO] Relatório enviado para comprador: ${voterJid}`);
+      } catch (e) {
+        console.error(`⚠️ [LEILÃO] Erro ao enviar relatório para ${voterJid}:`, e.message);
+      }
+
+      // Delay humanizado entre cada envio (3-8 segundos)
+      await delayHumano(3000, 8000);
+
+      // A cada bloco de 5 compradores, pausa longa de 30-50 segundos
+      if ((i + 1) % BLOCO_COMPRADORES === 0 && i < compradores.length - 1) {
+        console.log(`⏳ [LEILÃO] Bloco de ${BLOCO_COMPRADORES} relatórios enviados. Pausa longa...`);
+        await delayEntreBloco();
+      }
+    }
+
+    // ============================================================
     // 3. ENVIAR RELATÓRIO CONSOLIDADO PARA O ADMIN (PV)
+    // ============================================================
+    // Delay antes do relatório admin
+    await delayHumano(3000, 6000);
+
     try {
       const relatorioAdmin = gerarRelatorioAdmin(dados, grupoNome);
       await sock.sendMessage(sender, {
@@ -257,6 +299,29 @@ export async function comandoCancelarLeilao(msg, sock, from, args) {
   }
 
   return "🚫 *LEILÃO CANCELADO!*\n\nA sessão foi cancelada sem gerar relatórios. Todos os dados foram descartados.";
+}
+
+// ============================================================
+// !config-msg-leilao — Configura a mensagem de pagamento
+// ============================================================
+export async function comandoConfigMsgLeilao(msg, sock, from, args) {
+  const jid = msg.key.remoteJid;
+
+  if (!jid.endsWith("@g.us")) {
+    return "Esse comando só funciona em grupo!";
+  }
+
+  const mensagem = args.join(" ").trim();
+
+  if (!mensagem) {
+    // Mostrar a mensagem atual
+    const msgAtual = getMsgPagamento(jid);
+    return `📝 *Mensagem de pagamento atual:*\n\n"${msgAtual}"\n\n*Para alterar, use:*\n\`!config-msg-leilao Sua nova mensagem aqui\`\n\nExemplo:\n\`!config-msg-leilao Pix: 11999999999 (Fernando) - Envie o comprovante no PV!\``;
+  }
+
+  setMsgPagamento(jid, mensagem);
+
+  return `✅ *Mensagem de pagamento configurada!*\n\nNova mensagem:\n"${mensagem}"\n\nEssa mensagem será enviada no relatório de cada comprador quando o leilão for encerrado.`;
 }
 
 // FIM leilao.js
