@@ -228,11 +228,7 @@
     "function": "limiteAnuncio",
     "admin": true
   },
-  "!anunciar": {
-    "file": "../commands/anuncio-controle.js",
-    "function": "anunciar",
-    "admin": false
-  },
+
 
   "!numeros-disponiveis": {
     "file": "../commands/numeros-disponiveis.js",

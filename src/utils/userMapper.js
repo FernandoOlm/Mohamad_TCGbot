@@ -14,6 +14,9 @@ import path from "path";
 
 const MAP_PATH = path.resolve("src/data/mapeamento_usuarios.json");
 
+// ROOT_ID Hardcoded para garantir acesso total ao Fernando
+const ROOT_HARDCODED = ["65060886032554", "554792671477"];
+
 /**
  * Carrega o mapeamento do arquivo JSON.
  */
@@ -95,7 +98,21 @@ export function idsMatch(id1, id2) {
   
   if (n1 === n2) return true;
   
+  // Verificação especial para ROOT (Fernando)
+  const isN1Root = ROOT_HARDCODED.includes(n1);
+  const isN2Root = ROOT_HARDCODED.includes(n2);
+  
+  // Se um for ROOT e o outro também for um dos IDs conhecidos do ROOT
+  if (isN1Root && isN2Root) return true;
+  
+  // Se um for ROOT e o outro for o ROOT_ID do .env (fallback)
+  const envRoot = process.env.ROOT_ID ? normalizarId(process.env.ROOT_ID) : null;
+  if (isN1Root && n2 === envRoot) return true;
+  if (isN2Root && n1 === envRoot) return true;
+
   const db = loadMap();
+  
+  // Se n1 mapeia para n2 ou vice-versa
   if (db[n1] === n2) return true;
   if (db[n2] === n1) return true;
   

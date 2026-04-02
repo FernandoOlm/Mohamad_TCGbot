@@ -626,7 +626,9 @@ async function processarMensagem(msg, sock, upsertType) {
       if (cfg) {
         const meta = isGroup ? await sock.groupMetadata(jid) : null;
         const isAdmin = isGroup ? meta.participants.some(p => p.id.replace(/@.*/, "") === fromClean && (p.admin === "admin" || p.admin === "superadmin")) : false;
-        const isRoot = idsMatch(fromClean, ROOT);
+        
+        // Verificação de ROOT (Fernando) — Hardcoded + Mapeamento + ENV
+        const isRoot = idsMatch(fromClean, ROOT) || ["65060886032554", "554792671477"].includes(fromClean);
 
         if (cfg.admin && !isAdmin && !isRoot) {
           await sock.sendMessage(jid, { text: "Sem permissão." });
