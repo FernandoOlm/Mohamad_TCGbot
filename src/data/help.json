@@ -229,10 +229,6 @@
         {
           "cmd": "!red-flag [motivo]",
           "desc": "Marca contato como alerta/risco (responda um vCard)."
-        },
-        {
-          "cmd": "!add-limpa",
-          "desc": "Adiciona contatos do vCard no grupo e expulsa imediatamente (ciclo de verificacao)."
         }
       ]
     },
