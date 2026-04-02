@@ -413,10 +413,17 @@ async function startBot_Unique01() {
     try {
       const meta = await sock.groupMetadata(grupoId);
       for (const p of meta.participants) {
-        const lid = p.id.replace(/@.*/, "");
-        // No Baileys v6.7, se houver PN disponível, ele estará no objeto participante
-        if (p.id && p.lid) {
-           atualizarMapeamento(p.lid.replace(/@.*/, ""), p.id.replace(/@.*/, ""));
+        // O Baileys v6.7 fornece: p.id (principal), p.lid (LID), p.jid (PN)
+        const pLid = p.lid ? p.lid.replace(/@.*/, "") : null;
+        const pJid = p.jid ? p.jid.replace(/@.*/, "") : null;
+        const pId = p.id ? p.id.replace(/@.*/, "") : null;
+        
+        if (pLid && pJid) {
+          atualizarMapeamento(pLid, pJid);
+        } else if (pLid && pId && pLid !== pId) {
+          atualizarMapeamento(pLid, pId);
+        } else if (pJid && pId && pJid !== pId) {
+          atualizarMapeamento(pId, pJid);
         }
       }
     } catch (e) {}
@@ -559,6 +566,26 @@ async function processarMensagem(msg, sock, upsertType) {
       const meta = await sock.groupMetadata(jid);
       groupName = meta.subject;
       await atualizarGrupo_Unique03(sock, jid);
+      
+      // Mapear LID <-> PN do remetente da mensagem
+      const sender = meta.participants.find(p => {
+        const pId = p.id?.replace(/@.*/, "");
+        const pLid = p.lid?.replace(/@.*/, "");
+        const pJid = p.jid?.replace(/@.*/, "");
+        return pId === fromClean || pLid === fromClean || pJid === fromClean;
+      });
+      if (sender) {
+        const sLid = sender.lid ? sender.lid.replace(/@.*/, "") : null;
+        const sJid = sender.jid ? sender.jid.replace(/@.*/, "") : null;
+        const sId = sender.id ? sender.id.replace(/@.*/, "") : null;
+        if (sLid && sJid) {
+          atualizarMapeamento(sLid, sJid);
+        } else if (sLid && sId && sLid !== sId) {
+          atualizarMapeamento(sLid, sId);
+        } else if (sJid && sId && sJid !== sId) {
+          atualizarMapeamento(sId, sJid);
+        }
+      }
     } catch { groupName = "Grupo"; }
   }
 

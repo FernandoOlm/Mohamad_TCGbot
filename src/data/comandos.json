@@ -313,32 +313,32 @@
   "!listar-grupos": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoListarGrupos",
-    "admin": true
+    "admin": false
   },
   "!criar-lista": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoCriarListaTransmissao",
-    "admin": true
+    "admin": false
   },
   "!ver-listas": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoVerListas",
-    "admin": true
+    "admin": false
   },
   "!enviar-lista": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoEnviarLista",
-    "admin": true
+    "admin": false
   },
   "!editar-lista": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoEditarLista",
-    "admin": true
+    "admin": false
   },
   "!apagar-lista": {
     "file": "../commands/lista-transmissao.js",
     "function": "comandoApagarLista",
-    "admin": true
+    "admin": false
   }
 
 }

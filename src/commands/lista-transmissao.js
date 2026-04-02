@@ -47,9 +47,13 @@ function normalizarId(raw) {
 /**
  * Verifica se o usuário está no allowed.json (em qualquer grupo ou privados).
  * Retorna true se o ID está autorizado em pelo menos um lugar.
- * Usa comparação flexível para lidar com LID vs PN.
+ * 
+ * ESTRATÉGIA DE RESOLUÇÃO LID ↔ PN:
+ * 1. Comparação direta (idsMatch via mapeamento)
+ * 2. Se não encontrar, tenta resolver via sock (busca participantes dos grupos)
+ * 3. Aceita tanto LID quanto PN para máxima compatibilidade
  */
-function isAllowed(fromClean) {
+async function isAllowed(fromClean, sock) {
   const db = loadAuth();
   const normalizado = normalizarId(fromClean);
 
@@ -75,6 +79,68 @@ function isAllowed(fromClean) {
     if (idsMatch(normalizado, grupo.pagador)) return true;
   }
 
+  // FALLBACK: Se não encontrou via mapeamento, tentar resolver via sock
+  // Isso acontece quando o mapeamento está vazio (bot recém-iniciado)
+  if (sock) {
+    try {
+      const { resolverId, atualizarMapeamento } = await import("../utils/userMapper.js");
+      const grupos = await sock.groupFetchAllParticipating();
+      
+      for (const [gid, gdata] of Object.entries(grupos)) {
+        for (const p of (gdata.participants || [])) {
+          // O Baileys fornece p.id (LID ou PN dependendo do grupo), p.lid e p.jid
+          const pId = normalizarId(p.id);
+          const pLid = p.lid ? normalizarId(p.lid) : null;
+          const pJid = p.jid ? normalizarId(p.jid) : null;
+          
+          // Verificar se este participante é o fromClean
+          const isThisUser = pId === normalizado 
+            || (pLid && pLid === normalizado) 
+            || (pJid && pJid === normalizado);
+          
+          if (isThisUser) {
+            // Encontrou! Mapear para futuro uso
+            if (pLid && pJid) {
+              atualizarMapeamento(pLid, pJid);
+            } else if (pLid && pId !== pLid) {
+              atualizarMapeamento(pLid, pId);
+            } else if (pJid && pId !== pJid) {
+              atualizarMapeamento(pId, pJid);
+            }
+            
+            // Agora verificar se QUALQUER dos IDs deste participante está no allowed
+            const idsToCheck = [pId, pLid, pJid].filter(Boolean);
+            
+            for (const checkId of idsToCheck) {
+              // Verificar ROOT
+              if (ROOT && normalizarId(ROOT) === checkId) return true;
+              
+              // Verificar em privados
+              if (db.privados) {
+                for (const privId of Object.keys(db.privados)) {
+                  if (normalizarId(privId) === checkId) return true;
+                }
+              }
+              
+              // Verificar em qualquer grupo
+              for (const gKey of Object.keys(db.grupos || {})) {
+                const gConf = db.grupos[gKey];
+                if (normalizarId(gConf.pagador) === checkId) return true;
+                if (gConf.autorizados) {
+                  for (const autId of gConf.autorizados) {
+                    if (normalizarId(autId) === checkId) return true;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[LISTAS] Erro ao resolver IDs via sock:", e.message);
+    }
+  }
+
   return false;
 }
 
@@ -92,7 +158,7 @@ export async function comandoListarGrupos(msg, sock, fromClean, args) {
   }
 
   // Verificar allowed
-  if (!isAllowed(fromClean)) {
+  if (!(await isAllowed(fromClean, sock))) {
     await sock.sendMessage(jid, { text: "❌ Você não tem permissão para usar este comando." });
     return null;
   }
@@ -174,7 +240,7 @@ export async function comandoCriarListaTransmissao(msg, sock, fromClean, args) {
   }
 
   // Verificar allowed
-  if (!isAllowed(fromClean)) {
+  if (!(await isAllowed(fromClean, sock))) {
     await sock.sendMessage(jid, { text: "❌ Você não tem permissão para usar este comando." });
     return null;
   }
@@ -290,7 +356,7 @@ export async function comandoVerListas(msg, sock, fromClean, args) {
   }
 
   // Verificar allowed
-  if (!isAllowed(fromClean)) {
+  if (!(await isAllowed(fromClean, sock))) {
     await sock.sendMessage(jid, { text: "❌ Você não tem permissão para usar este comando." });
     return null;
   }
@@ -342,7 +408,7 @@ export async function comandoEnviarLista(msg, sock, fromClean, args) {
   }
 
   // Verificar allowed
-  if (!isAllowed(fromClean)) {
+  if (!(await isAllowed(fromClean, sock))) {
     await sock.sendMessage(jid, { text: "❌ Você não tem permissão para usar este comando." });
     return null;
   }
@@ -458,7 +524,7 @@ export async function comandoEditarLista(msg, sock, fromClean, args) {
   }
 
   // Verificar allowed
-  if (!isAllowed(fromClean)) {
+  if (!(await isAllowed(fromClean, sock))) {
     await sock.sendMessage(jid, { text: "❌ Você não tem permissão para usar este comando." });
     return null;
   }
@@ -582,7 +648,7 @@ export async function comandoApagarLista(msg, sock, fromClean, args) {
   }
 
   // Verificar allowed
-  if (!isAllowed(fromClean)) {
+  if (!(await isAllowed(fromClean, sock))) {
     await sock.sendMessage(jid, { text: "❌ Você não tem permissão para usar este comando." });
     return null;
   }
