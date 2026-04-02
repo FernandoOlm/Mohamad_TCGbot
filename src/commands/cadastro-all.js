@@ -13,7 +13,7 @@ function saveJSON(data) {
   fs.writeFileSync(AUTH_PATH, JSON.stringify(data, null, 2));
 }
 
-export async function comandoCadastroAll(msg, fromClean, textoOriginal) {
+export async function comandoCadastroAll(msg, sock, fromClean, args) {
   const jid = msg.key.remoteJid;
 
   if (!jid.endsWith("@g.us")) {
@@ -28,21 +28,26 @@ export async function comandoCadastroAll(msg, fromClean, textoOriginal) {
 
   const grupo = db.grupos[jid];
 
-  if (!grupo.autorizados.includes(fromClean)) {
+  // Normalizar ID para comparar com autorizados
+  const fromNorm = fromClean.replace(/\D/g, "").slice(-15);
+  if (!grupo.autorizados.includes(fromNorm)) {
     return { status: "erro", tipo: "cadastro-all", motivo: "nao_autorizado" };
   }
 
-  if (!textoOriginal || textoOriginal.trim().length === 0) {
+  // args é um array de palavras, juntar como texto
+  const textoOriginal = Array.isArray(args) ? args.join(" ").trim() : (args || "").toString().trim();
+
+  if (!textoOriginal || textoOriginal.length === 0) {
     return { status: "erro", tipo: "cadastro-all", motivo: "mensagem_vazia" };
   }
 
-  grupo.mensagemAll = textoOriginal.trim();
+  grupo.mensagemAll = textoOriginal;
   saveJSON(db);
 
   return {
     status: "ok",
     tipo: "cadastro-all",
-    mensagem: grupo.mensagemAll,
+    mensagem: `Mensagem do !all atualizada para: ${grupo.mensagemAll}`,
   };
 }
 

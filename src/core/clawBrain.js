@@ -26,6 +26,12 @@ const ERROS_HUMANIZADOS = {
   falha_remocao: "Falha ao remover da lista. Tente novamente.",
   nao_existe: "Esse usuário não está na lista de banidos.",
   sem_permissao: "Você não tem permissão para isso.",
+  nao_autorizado: "Você não está autorizado a usar esse comando neste grupo.",
+  grupo_sem_autorizacao: "Este grupo não está autorizado para usar o bot.",
+  mensagem_vazia: "Você precisa informar a mensagem. Ex: !cadastro-all Sua mensagem aqui",
+  nao_root: "Apenas o administrador principal pode usar este comando.",
+  id_invalido: "ID inválido. Informe um número válido.",
+  id_nao_encontrado: "Lembrete não encontrado com esse ID.",
 };
 
 function resolverErro(motivo) {
@@ -112,7 +118,11 @@ export async function clawBrainProcess_Unique01(msgObj) {
     if (dados?.despedida) return dados.despedida;
 
     // Erro com motivo mapeado → resposta humanizada direta
-    if (dados?.motivo) return resolverErro(dados.motivo);
+    if (dados?.status === "erro" && dados?.motivo) return resolverErro(dados.motivo);
+    if (dados?.motivo && dados?.status !== "ok") return resolverErro(dados.motivo);
+
+    // Comando executado com sucesso sem mensagem específica → não enviar nada extra
+    if (dados?.status === "ok") return null;
 
     // Fallback neutro e natural
     return "Feito.";
