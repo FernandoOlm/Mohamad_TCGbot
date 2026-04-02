@@ -41,10 +41,6 @@
           "desc": "Marca todos pedindo cadastro."
         },
         {
-          "cmd": "!listar-membros",
-          "desc": "Lista todos os membros do grupo."
-        },
-        {
           "cmd": "!autorizar @usuario",
           "desc": "Autoriza membros para funcoes especificas."
         },
