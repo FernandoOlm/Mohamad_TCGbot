@@ -652,11 +652,13 @@ async function processarMensagem(msg, sock, upsertType) {
     }
   }
 
-  // IA Normal: apenas em PV
+  // IA Normal: apenas em PV (DESATIVADO POR SOLICITAÇÃO)
+  /*
   if (!isGroup) {
     const resposta = await clawBrainProcess_Unique01(msg);
     if (resposta) await sock.sendMessage(jid, { text: String(resposta) });
   }
+  */
 }
 
 startBot_Unique01();
