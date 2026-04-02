@@ -1,0 +1,286 @@
+{
+  "categorias": [
+    {
+      "titulo": "Gerais",
+      "comandos": [
+        {
+          "cmd": "!ajuda",
+          "desc": "Mostra a lista completa de comandos."
+        },
+        {
+          "cmd": "!ping",
+          "desc": "Responde com a latencia do bot."
+        },
+        {
+          "cmd": "!tic",
+          "desc": "Retorna resposta rapida para teste."
+        },
+        {
+          "cmd": "!tiro",
+          "desc": "Jogo de tiro rapido."
+        },
+        {
+          "cmd": "!sorteio [N]",
+          "desc": "Sorteia N participantes do grupo."
+        },
+        {
+          "cmd": "!status",
+          "desc": "Mostra o status/reputacao de um contato (responda um vCard ou mencione)."
+        }
+      ]
+    },
+    {
+      "titulo": "Administracao",
+      "comandos": [
+        {
+          "cmd": "!all",
+          "desc": "Marca todos os membros do grupo."
+        },
+        {
+          "cmd": "!cadastro-all",
+          "desc": "Marca todos pedindo cadastro."
+        },
+        {
+          "cmd": "!listar-membros",
+          "desc": "Lista todos os membros do grupo."
+        },
+        {
+          "cmd": "!autorizar @usuario",
+          "desc": "Autoriza membros para funcoes especificas."
+        },
+        {
+          "cmd": "!fechar",
+          "desc": "Fecha o grupo (somente admins podem enviar)."
+        },
+        {
+          "cmd": "!abrir",
+          "desc": "Abre o grupo para todos enviarem."
+        },
+        {
+          "cmd": "!anuncia",
+          "desc": "Autoriza um anuncio no grupo."
+        },
+        {
+          "cmd": "!desautoriza @usuario",
+          "desc": "Remove autorizacao do usuario para comandos e anuncios."
+        },
+        {
+          "cmd": "!criar-rifa [Descricao] N100",
+          "desc": "Gera lista numerada para sorteio/rifa com N numeros vazios."
+        }
+      ]
+    },
+    {
+      "titulo": "Listas de Transmissao",
+      "comandos": [
+        {
+          "cmd": "!listar-grupos",
+          "desc": "Lista todos os grupos do bot com nome e ID. Apenas PV."
+        },
+        {
+          "cmd": "!criar-lista nome id1 id2",
+          "desc": "Cria lista de transmissao com os grupos informados. Apenas PV."
+        },
+        {
+          "cmd": "!ver-listas",
+          "desc": "Mostra suas listas de transmissao. Apenas PV."
+        },
+        {
+          "cmd": "!enviar-lista nome | mensagem",
+          "desc": "Envia mensagem para todos os grupos da lista. Apenas PV."
+        },
+        {
+          "cmd": "!editar-lista nome +id -id",
+          "desc": "Adiciona (+) ou remove (-) grupos de uma lista. Apenas PV."
+        },
+        {
+          "cmd": "!apagar-lista nome",
+          "desc": "Remove uma lista de transmissao. Apenas PV."
+        }
+      ]
+    },
+    {
+      "titulo": "Leilao / Enquete-Venda",
+      "comandos": [
+        {
+          "cmd": "!iniciar-leilao",
+          "desc": "Inicia uma sessao de leilao no grupo. A partir daqui, todas as enquetes sao registradas."
+        },
+        {
+          "cmd": "!enquete Descricao | R$ 10 | R$ 20 | R$ 30",
+          "desc": "Cria enquete de venda dentro da sessao ativa."
+        },
+        {
+          "cmd": "!status-leilao",
+          "desc": "Mostra o status do leilao ativo (itens, votos)."
+        },
+        {
+          "cmd": "!encerrar-leilao",
+          "desc": "Encerra o leilao, anuncia vencedores e envia relatorios no PV."
+        },
+        {
+          "cmd": "!cancelar-leilao",
+          "desc": "Cancela o leilao sem gerar relatorios (ROOT)."
+        }
+      ]
+    },
+    {
+      "titulo": "Boas-vindas (BV)",
+      "comandos": [
+        {
+          "cmd": "!criar-bv [mensagem]",
+          "desc": "Cria ou redefine a mensagem de boas-vindas."
+        },
+        {
+          "cmd": "!ativar-bv",
+          "desc": "Ativa o sistema de boas-vindas."
+        },
+        {
+          "cmd": "!desativar-bv",
+          "desc": "Desativa o sistema de boas-vindas."
+        },
+        {
+          "cmd": "!ver-bv",
+          "desc": "Mostra a mensagem atual de boas-vindas."
+        },
+        {
+          "cmd": "!del-bv",
+          "desc": "Remove totalmente a mensagem de boas-vindas."
+        }
+      ]
+    },
+    {
+      "titulo": "Lembretes",
+      "comandos": [
+        {
+          "cmd": "!lembrete DD/MM/AAAA HH:MM [D|S|M] mensagem",
+          "desc": "Cria lembrete unico, diario (D), semanal (S) ou mensal (M)."
+        },
+        {
+          "cmd": "!lembrete-diario HH:MM mensagem",
+          "desc": "Atalho para lembrete diario."
+        },
+        {
+          "cmd": "!lembrete-semanal HH:MM mensagem",
+          "desc": "Atalho para lembrete semanal."
+        },
+        {
+          "cmd": "!lembrete-mensal HH:MM mensagem",
+          "desc": "Atalho para lembrete mensal."
+        },
+        {
+          "cmd": "!listar-lembretes",
+          "desc": "Mostra todos os lembretes ativos."
+        },
+        {
+          "cmd": "!apagar-lembrete [ID]",
+          "desc": "Apaga um lembrete pelo ID."
+        },
+        {
+          "cmd": "!desativar-lembrete [ID]",
+          "desc": "Desativa um lembrete especifico."
+        }
+      ]
+    },
+    {
+      "titulo": "Xerife (Moderacao Automatica)",
+      "comandos": [
+        {
+          "cmd": "!ativar-xerife",
+          "desc": "Ativa o sistema automatico de moderacao de regras."
+        },
+        {
+          "cmd": "!desativar-xerife",
+          "desc": "Desativa o sistema automatico de moderacao."
+        }
+      ]
+    },
+    {
+      "titulo": "Banimentos e Seguranca",
+      "comandos": [
+        {
+          "cmd": "!ban @usuario [motivo]",
+          "desc": "Expulsa e bane alguem do grupo (use @ ou reply)."
+        },
+        {
+          "cmd": "!unban @usuario",
+          "desc": "Remove alguem da lista global de banidos."
+        },
+        {
+          "cmd": "!bans",
+          "desc": "Lista os banidos registrados neste grupo."
+        },
+        {
+          "cmd": "!globalbans",
+          "desc": "Lista todos os banidos globalmente."
+        },
+        {
+          "cmd": "!banir [motivo]",
+          "desc": "Bane contatos via vCard/lista: registra na lista global e expulsa se estiver no grupo."
+        },
+        {
+          "cmd": "!limpar-bans",
+          "desc": "Varre o grupo e expulsa todos que estao na lista global de banidos."
+        },
+        {
+          "cmd": "!red-flag [motivo]",
+          "desc": "Marca contato como alerta/risco (responda um vCard)."
+        },
+        {
+          "cmd": "!add-limpa",
+          "desc": "Adiciona contatos do vCard no grupo e expulsa imediatamente (ciclo de verificacao)."
+        }
+      ]
+    },
+    {
+      "titulo": "Controle de Anuncios",
+      "comandos": [
+        {
+          "cmd": "!ativar-controle",
+          "desc": "Ativa o sistema de controle de anuncios no grupo."
+        },
+        {
+          "cmd": "!desativar-controle",
+          "desc": "Desativa todas as validacoes de anuncio."
+        },
+        {
+          "cmd": "!ver-anuncio-config",
+          "desc": "Mostra status, horarios e limite diario configurados."
+        },
+        {
+          "cmd": "!config-anuncio <dias> <inicio> <fim>",
+          "desc": "Define janela de horario. Ex: !config-anuncio segunda,quarta 08:00 18:00"
+        },
+        {
+          "cmd": "!limite-anuncio <N>",
+          "desc": "Define o limite diario de anuncios por vendedor. Ex: !limite-anuncio 2"
+        },
+        {
+          "cmd": "!anunciar [@vendedor]",
+          "desc": "Solicita autorizacao para anunciar. Valida cadastro, horario e limite diario."
+        }
+      ]
+    },
+    {
+      "titulo": "Pokemon Fun (Diversao)",
+      "comandos": [
+        {
+          "cmd": "!quiz",
+          "desc": "Inicia um quiz com dados reais de cartas Pokemon TCG. Apenas admins."
+        },
+        {
+          "cmd": "!quem-eu",
+          "desc": "Jogo de adivinhacao: descubra o Pokemon pelas dicas. Apenas admins."
+        },
+        {
+          "cmd": "!ranking",
+          "desc": "Mostra o ranking de acertos do grupo."
+        },
+        {
+          "cmd": "!parar-jogo",
+          "desc": "Encerra o jogo ativo no grupo. Apenas admins."
+        }
+      ]
+    }
+  ]
+}
