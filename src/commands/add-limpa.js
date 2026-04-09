@@ -4,19 +4,7 @@
 
 import fs from "fs";
 import path from "path";
-
-const banPath = path.resolve("src/data/bans.json");
-
-/* ---------------------------------------------------
-   carregar bans
---------------------------------------------------- */
-function loadBans() {
-  if (!fs.existsSync(banPath)) {
-    console.log("📁 bans.json não existe, criando...");
-    return { global: [], grupos: {} };
-  }
-  return JSON.parse(fs.readFileSync(banPath));
-}
+import { dbRun, dbGet } from "../core/database.js";
 
 /* ---------------------------------------------------
    comando principal
@@ -105,9 +93,7 @@ export async function addLimpa(msg, sock) {
     let jaBanido = 0;
     let addBan = 0;
 
-    const bans = loadBans();
-
-    console.log("📚 Bans carregados:", bans.global.length);
+    console.log("📚 Verificando bans no SQLite...");
 
     /* ---------------------------------------------------
        PROCESSAMENTO
@@ -131,7 +117,7 @@ export async function addLimpa(msg, sock) {
         existeWhats++;
 
         // 🔒 já banido?
-        const isBanido = bans.global.find((b) => b.alvo === numero);
+        const isBanido = await dbGet(`SELECT id FROM bans WHERE alvo = ?`, [numero]);
 
         if (isBanido) {
           console.log("🚫 Já banido");
@@ -156,13 +142,10 @@ export async function addLimpa(msg, sock) {
           console.log("🗑️ Removendo...");
           await sock.groupParticipantsUpdate(groupId, [jid], "remove");
 
-          bans.global.push({
-            alvo: numero,
-            admin: "system-add-limpa",
-            grupoOrigem: groupId,
-            motivo: "add-limpa",
-            data: Date.now(),
-          });
+          await dbRun(
+            `INSERT OR IGNORE INTO bans (alvo, admin, grupo_origem, motivo, data) VALUES (?, ?, ?, ?, ?)`,
+            [numero, "system-add-limpa", groupId, "add-limpa", Date.now()]
+          );
 
           console.log("🔥 Add + Ban concluído");
 
@@ -180,8 +163,7 @@ export async function addLimpa(msg, sock) {
       }
     }
 
-    fs.writeFileSync(banPath, JSON.stringify(bans, null, 2));
-    console.log("💾 Bans salvos");
+    console.log("💾 Bans salvos no SQLite");
 
     /* ---------------------------------------------------
        RESPOSTA FINAL

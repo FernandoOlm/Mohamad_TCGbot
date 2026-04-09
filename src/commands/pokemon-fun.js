@@ -734,6 +734,29 @@ export async function comandoRanking(msg, sock, fromClean, args) {
 }
 
 // ========================================
+// COMANDO !limpar-ranking
+// ========================================
+export async function comandoLimparRanking(msg, sock, fromClean, args) {
+  const jid = msg.key.remoteJid;
+
+  if (!jid.endsWith("@g.us")) {
+    return { mensagem: "🏆 Esse comando só funciona em grupos!" };
+  }
+
+  const db = loadRanking();
+  
+  if (!db[jid] || Object.keys(db[jid]).length === 0) {
+    return { mensagem: "🏆 O ranking deste grupo já está vazio!" };
+  }
+
+  // Limpa o ranking do grupo atual
+  delete db[jid];
+  saveRanking(db);
+
+  return { mensagem: "🧹 *Ranking Pokémon limpo com sucesso!* \n\n_Todos os pontos deste grupo foram zerados._" };
+}
+
+// ========================================
 // COMANDO !parar-jogo
 // ========================================
 export async function comandoPararJogo(msg, sock, fromClean, args) {

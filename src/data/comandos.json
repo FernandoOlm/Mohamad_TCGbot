@@ -262,6 +262,11 @@
     "function": "comandoPararJogo",
     "admin": true
   },
+  "!limpar-ranking": {
+    "file": "../commands/pokemon-fun.js",
+    "function": "comandoLimparRanking",
+    "admin": true
+  },
 
   "!desautoriza": {
     "file": "../commands/desautoriza.js",
@@ -305,6 +310,21 @@
     "function": "comandoConfigMsgLeilao",
     "admin": true
   },
+  "!enquete-s": {
+    "file": "../commands/leilao.js",
+    "function": "comandoEnqueteS",
+    "admin": true
+  },
+  "!enquete-c": {
+    "file": "../commands/leilao.js",
+    "function": "comandoEnqueteC",
+    "admin": true
+  },
+  "!config-inicial-leilao": {
+    "file": "../commands/leilao.js",
+    "function": "comandoConfigInicialLeilao",
+    "admin": true
+  },
 
   "!listar-grupos": {
     "file": "../commands/lista-transmissao.js",
@@ -335,6 +355,16 @@
     "file": "../commands/lista-transmissao.js",
     "function": "comandoApagarLista",
     "admin": false
+  },
+  "!add-ref": {
+    "file": "../commands/add-ref.js",
+    "function": "comandoAddRef",
+    "admin": true
+  },
+    "!busca-status": {
+    "file": "../commands/reputacao.js",
+    "function": "buscaStatus",
+    "admin": true
   }
 
 }

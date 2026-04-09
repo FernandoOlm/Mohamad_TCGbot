@@ -117,6 +117,25 @@ export function getMsgPagamento(groupJid) {
 }
 
 /**
+ * Define a mensagem inicial personalizada para o grupo.
+ */
+export function setMsgInicial(groupJid, mensagem) {
+  const config = loadConfigLeilao();
+  if (!config[groupJid]) config[groupJid] = {};
+  config[groupJid].msgInicial = mensagem;
+  saveConfigLeilao(config);
+  return true;
+}
+
+/**
+ * Obtém a mensagem inicial do grupo (ou padrão).
+ */
+export function getMsgInicial(groupJid) {
+  const config = loadConfigLeilao();
+  return config[groupJid]?.msgInicial || "";
+}
+
+/**
  * Retorna a config completa do grupo.
  */
 export function getConfigLeilao(groupJid) {
@@ -223,6 +242,7 @@ export function iniciarSessao(groupJid, adminJid) {
     iniciadoPor: adminJid,
     enquetes: {},
     comprasConsolidadas: {},
+    proximoItem: 1, // Contador para numeração automática
   };
 
   saveLeiloes(db);
@@ -232,8 +252,9 @@ export function iniciarSessao(groupJid, adminJid) {
 
 /**
  * Registra uma nova enquete dentro da sessão ativa.
+ * @param {string} valorFixo - Valor opcional para enquetes Sim/Não (enquete-c)
  */
-export function registrarEnquete(groupJid, pollMsgId, descricao, opcoes) {
+export function registrarEnquete(groupJid, pollMsgId, descricao, opcoes, valorFixo = null) {
   const db = loadLeiloes();
   const sessao = db.sessoes[groupJid];
 
@@ -247,18 +268,25 @@ export function registrarEnquete(groupJid, pollMsgId, descricao, opcoes) {
     hash: computeOptionHash(texto),
   }));
 
+  const numeroItem = sessao.proximoItem || 1;
+  const descricaoComNumero = `Item #${numeroItem} - ${descricao}`;
+  
   sessao.enquetes[pollMsgId] = {
-    descricao,
+    numero: numeroItem,
+    descricao: descricaoComNumero,
     opcoes: opcoesComHash,
     votos: {},
     encerrada: false,
     vencedor: null,
     valorVencedor: null,
+    valorFixo: valorFixo ? extrairValorNumerico(valorFixo) : null,
     criadaEm: new Date().toISOString(),
   };
 
+  sessao.proximoItem = numeroItem + 1;
+
   saveLeiloes(db);
-  console.log(`📝 [LEILÃO] Enquete registrada: "${descricao}" (ID: ${pollMsgId})`);
+  console.log(`📝 [LEILÃO] Enquete registrada: "${descricao}" (ID: ${pollMsgId}) ${valorFixo ? `[Valor Fixo: ${valorFixo}]` : ""}`);
   return { ok: true };
 }
 
@@ -464,31 +492,54 @@ export function encerrarSessao(groupJid, grupoNome) {
     }
 
     // Mapear votos com valores numéricos
-    const votosComValor = votos.map(([voterJid, votoData]) => {
+    let votosComValor = votos.map(([voterJid, votoData]) => {
       const opcaoTexto = typeof votoData === "string" ? votoData : votoData.opcaoTexto;
       const valor = extrairValorNumerico(opcaoTexto);
       const timestamp = typeof votoData === "object" ? votoData.timestamp || 0 : 0;
       return { voterJid, opcaoTexto, valor, timestamp };
     });
 
-    // Ordenar: maior valor primeiro; em caso de empate, menor timestamp (primeiro a votar)
-    votosComValor.sort((a, b) => {
-      if (b.valor !== a.valor) return b.valor - a.valor;
-      return a.timestamp - b.timestamp;
-    });
+    // REGRA ESPECIAL PARA ENQUETE-S (Sim/Não)
+    const isEnqueteS = enquete.opcoes.length === 2 && 
+                       enquete.opcoes.some(o => o.texto === "Sim") && 
+                       enquete.opcoes.some(o => o.texto === "Não");
+
+    if (isEnqueteS) {
+      // Filtra apenas quem votou "Sim"
+      votosComValor = votosComValor.filter(v => v.opcaoTexto === "Sim");
+      
+      if (votosComValor.length === 0) {
+        itensSemLance.push(enquete.descricao);
+        enquete.encerrada = true;
+        continue;
+      }
+
+      // No !enquete-s, quem votou primeiro ganha (menor timestamp)
+      votosComValor.sort((a, b) => a.timestamp - b.timestamp);
+    } else {
+      // Ordenar leilão normal: maior valor primeiro; em caso de empate, menor timestamp
+      votosComValor.sort((a, b) => {
+        if (b.valor !== a.valor) return b.valor - a.valor;
+        return a.timestamp - b.timestamp;
+      });
+    }
 
     const vencedor = votosComValor[0];
     enquete.encerrada = true;
     enquete.vencedor = vencedor.voterJid;
-    enquete.valorVencedor = vencedor.valor;
+    
+    // Se tiver valor fixo (enquete-c), usa ele. Senão usa o valor extraído da opção.
+    const valorFinal = (enquete.valorFixo !== undefined && enquete.valorFixo !== null) ? enquete.valorFixo : vencedor.valor;
+    enquete.valorVencedor = valorFinal;
 
     resultados.push({
       descricao: enquete.descricao,
       vencedorJid: vencedor.voterJid,
       vencedorNumero: vencedor.voterJid.replace(/@.*/, ""),
-      valorTexto: vencedor.opcaoTexto,
-      valorNumerico: vencedor.valor,
+      valorTexto: (enquete.valorFixo !== undefined && enquete.valorFixo !== null) ? formatarReais(enquete.valorFixo) : vencedor.opcaoTexto,
+      valorNumerico: valorFinal,
       totalVotos: votos.length,
+      isEnqueteS // Flag para o relatório saber que é brinde/sim-não
     });
 
     // Consolidar compras por pessoa
@@ -500,10 +551,10 @@ export function encerrarSessao(groupJid, grupoNome) {
     }
     comprasPorPessoa[vencedor.voterJid].itens.push({
       descricao: enquete.descricao,
-      valor: vencedor.valor,
-      valorTexto: vencedor.opcaoTexto,
+      valor: valorFinal,
+      valorTexto: (enquete.valorFixo !== undefined && enquete.valorFixo !== null) ? formatarReais(enquete.valorFixo) : vencedor.opcaoTexto,
     });
-    comprasPorPessoa[vencedor.voterJid].total += vencedor.valor;
+    comprasPorPessoa[vencedor.voterJid].total += valorFinal;
   }
 
   // Calcular faturamento total
@@ -686,7 +737,9 @@ export function gerarRelatorioAdmin(dadosEncerramento, grupoNome) {
       mentions.push(voterJid);
 
       for (const item of compras.itens) {
-        texto += `  ${item.descricao} — ${item.valorTexto}\n`;
+        // Se for enquete-s, o valorTexto é "Sim", mas no relatório fica mais bonito mostrar apenas a descrição ou "Arrematado"
+        const valorExibicao = item.valorTexto === "Sim" ? "Arrematado" : item.valorTexto;
+        texto += `  ${item.descricao} — ${valorExibicao}\n`;
       }
       texto += `  *Subtotal:* ${formatarReais(compras.total)}\n\n`;
     }

@@ -31,6 +31,9 @@ export async function autorizarAnuncio(msg, sock, fromClean, args) {
     const db = loadDB();
 
     // criar grupo se não existir
+    if (!db.grupos) {
+      db.grupos = {};
+    }
     if (!db.grupos[jid]) {
       db.grupos[jid] = { autorizados: [] };
     }
@@ -43,10 +46,15 @@ export async function autorizarAnuncio(msg, sock, fromClean, args) {
     // salvar
     saveDB(db);
 
-    return {
-      mensagem: `@${alvo.replace("@s.whatsapp.net","")} está autorizado a anunciar no grupo.`,
-      mentions: [alvo]
-    };
+    // Reagir com joinha em vez de enviar texto
+    await sock.sendMessage(jid, {
+      react: {
+        text: "👍",
+        key: msg.key,
+      },
+    });
+
+    return null;
 
   } catch (err) {
     console.log("Erro no comando !anuncia:", err);

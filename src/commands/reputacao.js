@@ -1,5 +1,5 @@
 // ================================
-// reputacao.js
+// reputacao.js (GLOBAL + DETECÇÃO INTELIGENTE + ÚLTIMO MOTIVO + BUSCA STATUS)
 // ================================
 import fs from "fs";
 import path from "path";
@@ -10,7 +10,7 @@ const PATH_DB = path.resolve("src/data/reputacao.json");
 const SALT = process.env.SALT_SECRETO || "salt_forte_aqui";
 
 // ================================
-// DB local (reputação por grupo)
+// DB local (reputação global)
 // ================================
 function ensureDB() {
   if (!fs.existsSync(PATH_DB)) {
@@ -26,12 +26,12 @@ function saveDB(db) {
 }
 
 // ================================
-// HASH LGPD
+// HASH LGPD (Global)
 // ================================
-function hashNumero(numero, grupo) {
+function hashNumeroGlobal(numero) {
   return crypto
     .createHash("sha256")
-    .update(numero + grupo + SALT)
+    .update(numero + "GLOBAL" + SALT)
     .digest("hex");
 }
 
@@ -56,7 +56,7 @@ function extrairNumerosUniversal(msg) {
   }
   // 2. Um único vCard
   if (m?.contactMessage?.vcard) extrairTudo(m.contactMessage.vcard);
-  // 3. Reply (mensagem citada)
+  // 3. Reply (mensagem citada) - vCard
   const context = m?.extendedTextMessage?.contextInfo;
   if (context?.quotedMessage?.contactMessage?.vcard) {
     extrairTudo(context.quotedMessage.contactMessage.vcard);
@@ -64,132 +64,64 @@ function extrairNumerosUniversal(msg) {
   if (context?.quotedMessage?.contactsArrayMessage?.contacts) {
     for (const c of context.quotedMessage.contactsArrayMessage.contacts) extrairTudo(c.vcard);
   }
-  // 4. Texto livre (fallback)
+  
+  // 4. Se for resposta a uma mensagem comum (não vCard), pega o autor da mensagem citada
+  if (context?.participant) {
+    const participant = context.participant.replace(/@.*/, "");
+    if (participant.match(/^\d+$/)) {
+      numeros.add(participant);
+    }
+  }
+
+  // 5. Texto livre (fallback)
   const texto = m?.conversation || m?.extendedTextMessage?.text || "";
   extrairTudo(texto);
 
   return [...numeros];
 }
 
-// ================================
-// BASE
-// ================================
 function criarBase() {
-  return { ban: [], redflag: [] };
-}
-
-// ================================
-// DELAY HUMANO — tempo aleatório entre ações
-// Simula comportamento humano, evita detecção do Meta
-// ================================
-function delayHumano(minMs = 800, maxMs = 2500) {
-  const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
-  return new Promise(r => setTimeout(r, ms));
+  return { ban: [], redflag: [], referencias: [], scoreTotal: 0, totalVotos: 0 };
 }
 
 // ================================
 // BANIR
-// O que faz:
-//   1. Registra na reputação local (hash LGPD)
-//   2. Registra no ban global SQLite
-//   3. Se o número ESTÁ NO GRUPO ATUAL, expulsa com delay humano
-//   4. NÃO faz add+remove — isso desconecta o Baileys e é detectado pelo Meta
-//
-// A proteção de outros grupos é feita pelo banCheckEntrada_Unique01 (ban.js)
-// que expulsa automaticamente quando o banido tenta entrar em qualquer grupo.
 // ================================
 export async function banir(msg, sock, from, args) {
   try {
     const grupo = msg.key.remoteJid;
-    if (!grupo.includes("@g.us")) {
-      return { texto: "❌ Apenas em grupo." };
-    }
-
     const motivo = args?.join(" ")?.trim();
-    if (!motivo) {
-      return { texto: "❌ Use: !banir [motivo]" };
-    }
+    if (!motivo) return { texto: "❌ Use: !banir [motivo]" };
 
     const numeros = extrairNumerosUniversal(msg);
-    if (!numeros.length) {
-      return { texto: "❌ Nenhum número encontrado. Responda um vCard ou mencione o número." };
-    }
-
-    // Carrega participantes do grupo atual para saber quem está dentro
-    let participantes = [];
-    try {
-      const meta = await sock.groupMetadata(grupo);
-      participantes = meta.participants.map(p => p.id.replace(/@.*/, ""));
-    } catch {}
+    if (!numeros.length) return { texto: "❌ Nenhum número encontrado." };
 
     const db = loadDB();
-    if (!db[grupo]) db[grupo] = {};
+    if (!db["global"]) db["global"] = {};
 
     let totalRegistrado = 0;
-    let totalExpulsoAgora = 0;
-    let totalJaBanido = 0;
-
     for (const numero of numeros) {
-      // --- 1. Reputação local (hash LGPD) ---
-      const id = hashNumero(numero, grupo);
-      if (!db[grupo][id]) db[grupo][id] = criarBase();
-      const lista = db[grupo][id].ban;
-      lista.push({ motivo, autor: from, data: Date.now() });
-      if (lista.length > 20) lista.shift();
+      const id = hashNumeroGlobal(numero);
+      if (!db["global"][id]) db["global"][id] = criarBase();
+      db["global"][id].ban.push({ motivo, autor: from, data: Date.now() });
 
-      // --- 2. Ban global SQLite ---
-      const jaBanido = await dbGet(`SELECT id FROM bans WHERE alvo = ?`, [numero]);
-      if (jaBanido) {
-        totalJaBanido++;
-      } else {
-        await dbRun(
-          `INSERT OR IGNORE INTO bans (alvo, admin, grupo_origem, motivo, data) VALUES (?, ?, ?, ?, ?)`,
-          [numero, from, grupo, motivo, Date.now()]
-        );
-        totalRegistrado++;
-      }
-
-      // --- 3. Se está no grupo atual, expulsa com delay humano ---
-      if (participantes.includes(numero)) {
-        // Delay humano antes de expulsar (entre 1s e 3s)
-        await delayHumano(1000, 3000);
-        const idsPossiveis = [
-          `${numero}@s.whatsapp.net`,
-          `${numero}@lid`,
-          `${numero}@c.us`
-        ];
-        for (const jid of idsPossiveis) {
-          try {
-            await sock.groupParticipantsUpdate(grupo, [jid], "remove");
-            totalExpulsoAgora++;
-            break;
-          } catch {}
-        }
-        // Delay humano após expulsar
-        await delayHumano(800, 2000);
-      }
+      await dbRun(
+        `INSERT OR IGNORE INTO bans (alvo, admin, grupo_origem, motivo, data) VALUES (?, ?, ?, ?, ?)`,
+        [numero, from, grupo, motivo, Date.now()]
+      );
+      totalRegistrado++;
     }
 
     saveDB(db);
-
-    // Relatório final
-    let resposta = `🚫 *BANIMENTO — ${motivo}*\n\n`;
-    resposta += `📇 Contatos: *${numeros.length}*\n`;
-    if (totalRegistrado > 0) resposta += `🌍 Adicionados à lista global: *${totalRegistrado}*\n`;
-    if (totalJaBanido > 0) resposta += `🔒 Já estavam banidos: *${totalJaBanido}*\n`;
-    if (totalExpulsoAgora > 0) resposta += `⚔️ Expulsos deste grupo agora: *${totalExpulsoAgora}*\n`;
-    resposta += `\n✅ Se tentarem entrar em qualquer grupo, serão expulsos automaticamente.`;
-
-    return { texto: resposta };
-
+    return { texto: `🚫 ${totalRegistrado} banimento(s) global(is) registrado(s).` };
   } catch (err) {
     console.error("ERRO BANIR:", err);
-    return { texto: "❌ Erro ao processar o banimento." };
+    return { texto: "❌ Erro." };
   }
 }
 
 // ================================
-// RED FLAG (leve — apenas reputação local)
+// RED FLAG
 // ================================
 export async function redFlag(msg, sock, from, args) {
   try {
@@ -200,22 +132,18 @@ export async function redFlag(msg, sock, from, args) {
     if (!numeros.length) return { texto: "❌ Nenhum número encontrado." };
 
     const db = loadDB();
-    const grupo = msg.key.remoteJid;
-    if (!db[grupo]) db[grupo] = {};
+    if (!db["global"]) db["global"] = {};
 
     let total = 0;
     for (const numero of numeros) {
-      const id = hashNumero(numero, grupo);
-      if (!db[grupo][id]) db[grupo][id] = criarBase();
-      const lista = db[grupo][id].redflag;
-      lista.push({ motivo, autor: from, data: Date.now() });
-      if (lista.length > 20) lista.shift();
+      const id = hashNumeroGlobal(numero);
+      if (!db["global"][id]) db["global"][id] = criarBase();
+      db["global"][id].redflag.push({ motivo, autor: from, data: Date.now() });
       total++;
     }
 
     saveDB(db);
-    return { texto: `🚩 ${total} alerta(s) registrado(s): ${motivo}` };
-
+    return { texto: `🚩 ${total} alerta(s) global(is) registrado(s).` };
   } catch (err) {
     console.error("ERRO REDFLAG:", err);
     return { texto: "❌ Erro." };
@@ -223,55 +151,176 @@ export async function redFlag(msg, sock, from, args) {
 }
 
 // ================================
-// STATUS — reputação local + ban global
+// STATUS (Lê da chave global com detecção inteligente)
 // ================================
 export async function status(msg, sock, from, args) {
   try {
-    const numeros = extrairNumerosUniversal(msg);
-    if (!numeros.length) return { texto: "❌ Nenhum número encontrado." };
+    let numeros = extrairNumerosUniversal(msg);
+    
+    // Se não encontrou nada via vCard ou resposta, verifica o próprio autor
+    if (!numeros.length) {
+      const self = (msg.key.participant || msg.key.remoteJid).replace(/@.*/, "");
+      numeros = [self];
+    }
 
     const db = loadDB();
-    const grupo = msg.key.remoteJid;
-    const id = hashNumero(numeros[0], grupo);
-    const dados = db?.[grupo]?.[id];
+    const numeroAlvo = numeros[0];
+    const id = hashNumeroGlobal(numeroAlvo);
+    const dados = db?.["global"]?.[id];
 
-    const banGlobal = await dbGet(`SELECT * FROM bans WHERE alvo = ?`, [numeros[0]]);
+    // Busca o banimento mais recente no SQLite
+    const banGlobal = await dbGet(`SELECT * FROM bans WHERE alvo = ? ORDER BY data DESC LIMIT 1`, [numeroAlvo]);
 
-    if (!dados && !banGlobal) return { texto: "Nenhum registro para esse contato." };
+    if (!dados && !banGlobal) {
+      return { texto: `ℹ️ Nenhum registro encontrado para o contato *${numeroAlvo}*.` };
+    }
 
     const bans = dados?.ban?.length || 0;
     const flags = dados?.redflag?.length || 0;
+    const refs = dados?.referencias?.length || 0;
+    const scoreTotal = dados?.scoreTotal || 0;
+    const totalVotos = dados?.totalVotos || 0;
+    const media = totalVotos > 0 ? (scoreTotal / totalVotos).toFixed(1) : "0.0";
+
+    // Determina o motivo do banimento (prioriza o global do SQLite)
+    let motivoBan = "";
+    if (banGlobal) {
+      motivoBan = banGlobal.motivo;
+    } else if (bans > 0) {
+      motivoBan = dados.ban[dados.ban.length - 1].motivo;
+    }
 
     let nivel = "✅ OK";
     if (banGlobal || bans > 0) nivel = "🚨 BANIDO GLOBAL";
     else if (flags >= 3) nivel = "⚠️ ALTO RISCO";
     else if (flags > 0) nivel = "⚠️ ATENÇÃO";
+    else if (media >= 4.5 && refs >= 5) nivel = "💎 CONFIÁVEL (N5)";
+    else if (media >= 3.5) nivel = "⭐ BOM VENDEDOR";
 
-    return {
-      texto: `📊 *Status do contato*\n\n🚫 Bans locais: ${bans}\n🚩 Alertas: ${flags}\n🌍 Ban global: ${banGlobal ? "Sim — " + banGlobal.motivo : "Não"}\n\nStatus: ${nivel}`
-    };
+    let texto = `📊 *Status Global: ${numeroAlvo}*\n\n`;
+    texto += `🚫 Bans: *${bans}*\n`;
+    texto += `🚩 Alertas: *${flags}*\n`;
+    
+    if (banGlobal || bans > 0) {
+      texto += `🌍 Ban global: *Sim — ${motivoBan}*\n\n`;
+    } else {
+      texto += `🌍 Ban global: *Não*\n\n`;
+    }
 
+    texto += `⭐ *Score:* *${media}/5* (${totalVotos} votos)\n`;
+    texto += `📝 *Referências:* *${refs}*\n\n`;
+    
+    if (refs > 0) {
+      texto += `*Últimas referências:*\n`;
+      const ultimas = dados.referencias.slice(-5).reverse();
+      ultimas.forEach(r => {
+        texto += `• "${r.comentario}" (N${r.nota})\n`;
+      });
+      texto += `\n`;
+    }
+
+    texto += `Status: *${nivel}*`;
+    return { texto };
   } catch (err) {
     console.error("ERRO STATUS:", err);
-    return { texto: "❌ Erro." };
+    return { texto: "❌ Erro ao consultar status." };
   }
 }
 
 // ================================
-// CLEAN REPUTAÇÃO (ROOT ONLY)
+// BUSCA STATUS (Grupos em comum)
 // ================================
+export async function buscaStatus(msg, sock, from, args) {
+  try {
+    let numeros = extrairNumerosUniversal(msg);
+    
+    if (!numeros.length) {
+      return { texto: "❌ Por favor, responda a um vCard para buscar os grupos em comum." };
+    }
+
+    const numeroAlvo = numeros[0];
+    const jidAlvo = numeroAlvo + "@s.whatsapp.net";
+    
+    // 1. Obter todos os grupos que o bot participa
+    const todosGrupos = await sock.groupFetchAllParticipating();
+    const gruposEmComum = [];
+
+    // 2. Verificar em cada grupo se o alvo está presente
+    for (const [jid, metadata] of Object.entries(todosGrupos)) {
+      const estaNoGrupo = metadata.participants.some(p => p.id === jidAlvo);
+      if (estaNoGrupo) {
+        gruposEmComum.push(metadata.subject || jid);
+      }
+    }
+
+    // 3. Obter dados de reputação (mesma lógica do !status)
+    const db = loadDB();
+    const id = hashNumeroGlobal(numeroAlvo);
+    const dados = db?.["global"]?.[id];
+    const banGlobal = await dbGet(`SELECT * FROM bans WHERE alvo = ? ORDER BY data DESC LIMIT 1`, [numeroAlvo]);
+
+    const bans = dados?.ban?.length || 0;
+    const flags = dados?.redflag?.length || 0;
+    const refs = dados?.referencias?.length || 0;
+    const scoreTotal = dados?.scoreTotal || 0;
+    const totalVotos = dados?.totalVotos || 0;
+    const media = totalVotos > 0 ? (scoreTotal / totalVotos).toFixed(1) : "0.0";
+
+    let motivoBan = "";
+    if (banGlobal) {
+      motivoBan = banGlobal.motivo;
+    } else if (bans > 0) {
+      motivoBan = dados.ban[dados.ban.length - 1].motivo;
+    }
+
+    let nivel = "✅ OK";
+    if (banGlobal || bans > 0) nivel = "🚨 BANIDO GLOBAL";
+    else if (flags >= 3) nivel = "⚠️ ALTO RISCO";
+    else if (flags > 0) nivel = "⚠️ ATENÇÃO";
+    else if (media >= 4.5 && refs >= 5) nivel = "💎 CONFIÁVEL (N5)";
+    else if (media >= 3.5) nivel = "⭐ BOM VENDEDOR";
+
+    // 4. Montar a resposta final
+    let texto = `📊 *Status Global: ${numeroAlvo}*\n\n`;
+    texto += `🚫 Bans: *${bans}*\n`;
+    texto += `🚩 Alertas: *${flags}*\n`;
+    
+    if (banGlobal || bans > 0) {
+      texto += `🌍 Ban global: *Sim — ${motivoBan}*\n\n`;
+    } else {
+      texto += `🌍 Ban global: *Não*\n\n`;
+    }
+
+    texto += `⭐ *Score:* *${media}/5* (${totalVotos} votos)\n`;
+    texto += `📝 *Referências:* *${refs}*\n\n`;
+    
+    if (refs > 0) {
+      texto += `*Últimas referências:*\n`;
+      const ultimas = dados.referencias.slice(-5).reverse();
+      ultimas.forEach(r => {
+        texto += `• "${r.comentario}" (N${r.nota})\n`;
+      });
+      texto += `\n`;
+    }
+
+    texto += `Status: *${nivel}*\n`;
+    texto += `Grupos em Comum Ferdinando: *${gruposEmComum.length} Grupos*`;
+
+    return { texto };
+  } catch (err) {
+    console.error("ERRO BUSCA STATUS:", err);
+    return { texto: "❌ Erro ao buscar grupos em comum." };
+  }
+}
+
 export async function cleanRep(msg, sock, from, args) {
   try {
     const ROOT = process.env.ROOT_ID;
     if (from !== ROOT) return { texto: "❌ Apenas o root pode usar esse comando." };
     fs.writeFileSync(PATH_DB, JSON.stringify({}, null, 2));
-    return { texto: "🧹 Reputação local limpa com sucesso." };
+    return { texto: "🧹 Reputação global limpa com sucesso." };
   } catch (err) {
     console.error("ERRO CLEAN REP:", err);
     return { texto: "❌ Erro ao limpar reputação." };
   }
 }
-
-// ================================
-// FIM
-// ================================

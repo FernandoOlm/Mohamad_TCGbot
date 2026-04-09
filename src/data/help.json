@@ -25,7 +25,15 @@
         },
         {
           "cmd": "!status",
-          "desc": "Mostra o status/reputacao de um contato (responda um vCard ou mencione)."
+          "desc": "Mostra a reputacao global de um contato (vCard ou resposta)."
+        },
+        {
+          "cmd": "!busca-status",
+          "desc": "Busca grupos em comum com um contato (vCard)."
+        },
+        {
+          "cmd": "!add-ref [texto] N[0-5]",
+          "desc": "Adiciona referencia e nota global (responda vCard). Reage com 👍."
         }
       ]
     },
@@ -34,7 +42,7 @@
       "comandos": [
         {
           "cmd": "!all",
-          "desc": "Marca todos os membros do grupo."
+          "desc": "Marca todos os membros do grupo ou canal."
         },
         {
           "cmd": "!cadastro-all",
@@ -100,11 +108,19 @@
       "comandos": [
         {
           "cmd": "!iniciar-leilao",
-          "desc": "Inicia uma sessao de leilao no grupo. A partir daqui, todas as enquetes sao registradas."
+          "desc": "Inicia sessao de leilao com cabecalho limpo e numeracao."
         },
         {
-          "cmd": "!enquete Descricao | R$ 10 | R$ 20 | R$ 30",
-          "desc": "Cria enquete de venda dentro da sessao ativa."
+          "cmd": "!enquete Descricao | R$ 10 | R$ 20",
+          "desc": "Cria enquete de venda numerada na sessao ativa."
+        },
+        {
+          "cmd": "!enquete-s [Descricao]",
+          "desc": "Cria enquete rapida Sim/Não. Primeiro 'Sim' arremata."
+        },
+        {
+          "cmd": "!enquete-c [Descricao] | [Valor]",
+          "desc": "Cria enquete Sim/Não com valor fixo. Primeiro 'Sim' arremata."
         },
         {
           "cmd": "!status-leilao",
@@ -112,15 +128,19 @@
         },
         {
           "cmd": "!encerrar-leilao",
-          "desc": "Encerra o leilao, anuncia vencedores e envia relatorios no PV."
+          "desc": "Encerra o leilao e gera relatorios (votos 'Não' sao ignorados)."
         },
         {
           "cmd": "!cancelar-leilao",
           "desc": "Cancela o leilao sem gerar relatorios (ROOT)."
         },
         {
-          "cmd": "!config-msg-leilao [mensagem]",
-          "desc": "Configura a mensagem de pagamento enviada no relatorio do comprador. Ex: !config-msg-leilao Pix: 11999 (Fernando)"
+          "cmd": "!config-inicial-leilao [msg]",
+          "desc": "Configura a mensagem de abertura do leilao. Reage com 👍."
+        },
+        {
+          "cmd": "!config-msg-leilao [msg]",
+          "desc": "Configura a mensagem de pagamento no relatorio final."
         }
       ]
     },
@@ -216,11 +236,11 @@
         },
         {
           "cmd": "!banir [motivo]",
-          "desc": "Bane contatos via vCard/lista: registra na lista global e expulsa se estiver no grupo."
+          "desc": "Bane via vCard: registra globalmente e expulsa do grupo."
         },
         {
           "cmd": "!limpar-bans",
-          "desc": "Varre o grupo e expulsa todos que estao na lista global de banidos."
+          "desc": "Varre o grupo e expulsa todos na lista global de banidos."
         },
         {
           "cmd": "!red-flag [motivo]",
@@ -275,6 +295,10 @@
         {
           "cmd": "!parar-jogo",
           "desc": "Encerra o jogo ativo no grupo. Apenas admins."
+        },
+        {
+          "cmd": "!limpar-ranking",
+          "desc": "Zera a pontuacao do ranking de Pokemon no grupo atual. Apenas admins."
         }
       ]
     }

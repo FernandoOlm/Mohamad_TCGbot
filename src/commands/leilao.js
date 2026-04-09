@@ -14,6 +14,8 @@ import {
   formatarReais,
   setMsgPagamento,
   getMsgPagamento,
+  setMsgInicial,
+  getMsgInicial,
   getConfigLeilao,
   delayHumano,
   delayEntreBloco,
@@ -25,8 +27,8 @@ import {
 export async function comandoIniciarLeilao(msg, sock, from, args) {
   const jid = msg.key.remoteJid;
 
-  if (!jid.endsWith("@g.us")) {
-    return "Esse comando só funciona em grupo!";
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
+    return { mensagem: "Esse comando só funciona em grupo!" };
   }
 
   const sender = msg.key.participant || msg.key.remoteJid;
@@ -34,18 +36,40 @@ export async function comandoIniciarLeilao(msg, sock, from, args) {
 
   if (!result.ok) {
     if (result.motivo === "ja_ativo") {
-      return "⚠️ Já tem um leilão rolando nesse grupo! Use *!status-leilao* pra ver como tá, ou *!encerrar-leilao* pra finalizar o atual.";
+      return { mensagem: "⚠️ Já tem um leilão rolando nesse grupo! Use *!status-leilao* pra ver como tá, ou *!encerrar-leilao* pra finalizar o atual." };
     }
-    return "Deu ruim pra iniciar o leilão...";
+    return { mensagem: "Deu ruim pra iniciar o leilão..." };
   }
 
-  return "🔨 *LEILÃO INICIADO!* 🔨\n\n" +
-    "A partir de agora, todas as enquetes criadas com *!enquete* serão registradas nesta sessão.\n\n" +
-    "📝 *Como criar itens:*\n" +
-    "`!enquete Descrição do item | R$ 10 | R$ 20 | R$ 30`\n\n" +
-    "🗳️ Os membros votam na opção desejada.\n" +
-    "🔚 Quando terminar, use *!encerrar-leilao* para fechar e gerar os relatórios.\n\n" +
-    "Bora leiloar! 🚀";
+  // Obter nome do grupo ou canal
+  let nomeGrupo = "Grupo";
+  try {
+    if (jid.endsWith("@newsletter")) {
+      nomeGrupo = "Canal";
+    } else {
+      const meta = await sock.groupMetadata(jid);
+      nomeGrupo = meta.subject;
+    }
+  } catch {}
+
+  const msgInicial = getMsgInicial(jid);
+  
+  let textoCompleto = `🔨 *LEILÃO INICIADO!* 🔨\n\n`;
+  textoCompleto += `📍 *${nomeGrupo}*\n`;
+  textoCompleto += `🔢 *Leilão #${Date.now().toString().slice(-4)}*\n\n`; // Número único baseado no tempo
+  
+  if (msgInicial) {
+    textoCompleto += `${msgInicial}`;
+  } else {
+    textoCompleto += `A partir de agora, todas as enquetes criadas serão monitoradas e registrados os votos pelo bot.\n\n`;
+    textoCompleto += `📝 *Como criar itens:*\n`;
+    textoCompleto += `!enquete Descrição do item | R$ 10 | R$ 20 | R$ 30\n\n`;
+    textoCompleto += `🗳️ Os membros votam na opção desejada.\n`;
+    textoCompleto += `🔚 Quando terminar, use !encerrar-leilao para fechar e gerar os relatórios.\n\n`;
+    textoCompleto += `Bora leiloar! 🚀`;
+  }
+
+  return { mensagem: textoCompleto };
 }
 
 // ============================================================
@@ -54,7 +78,7 @@ export async function comandoIniciarLeilao(msg, sock, from, args) {
 export async function comandoEnquete(msg, sock, from, args) {
   const jid = msg.key.remoteJid;
 
-  if (!jid.endsWith("@g.us")) {
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
     return "Esse comando só funciona em grupo!";
   }
 
@@ -120,7 +144,7 @@ export async function comandoEncerrarLeilao(msg, sock, from, args) {
   const jid = msg.key.remoteJid;
   const sender = msg.key.participant || msg.key.remoteJid;
 
-  if (!jid.endsWith("@g.us")) {
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
     return "Esse comando só funciona em grupo!";
   }
 
@@ -128,13 +152,15 @@ export async function comandoEncerrarLeilao(msg, sock, from, args) {
     return "⚠️ Não tem nenhum leilão ativo nesse grupo pra encerrar!";
   }
 
-  // Obter nome do grupo
-  let grupoNome = "Grupo";
-  try {
-    const metadata = await sock.groupMetadata(jid);
-    grupoNome = metadata.subject || "Grupo";
-  } catch (e) {
-    console.error("⚠️ [LEILÃO] Erro ao buscar nome do grupo:", e.message);
+  // Obter nome do grupo/canal
+  let grupoNome = jid.endsWith("@newsletter") ? "Canal" : "Grupo";
+  if (!jid.endsWith("@newsletter")) {
+    try {
+      const metadata = await sock.groupMetadata(jid);
+      grupoNome = metadata.subject || "Grupo";
+    } catch (e) {
+      console.error("⚠️ [LEILÃO] Erro ao buscar nome do grupo:", e.message);
+    }
   }
 
   // Encerrar sessão e calcular resultados
@@ -239,12 +265,155 @@ export async function comandoEncerrarLeilao(msg, sock, from, args) {
 }
 
 // ============================================================
+// !enquete-s — Cria uma enquete simplificada (Sim/Não)
+// ============================================================
+export async function comandoEnqueteS(msg, sock, from, args) {
+  const jid = msg.key.remoteJid;
+
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
+    return { mensagem: "Esse comando só funciona em grupo!" };
+  }
+
+  if (!temSessaoAtiva(jid)) {
+    return { mensagem: "⚠️ Não tem nenhum leilão ativo nesse grupo! Use *!iniciar-leilao* primeiro." };
+  }
+
+  const descricao = args.join(" ").trim();
+  if (!descricao) {
+    return { mensagem: "⚠️ Use: `!enquete-s Descrição do brinde/pergunta`" };
+  }
+
+  const opcoes = ["Sim", "Não"];
+
+  try {
+    // Envia a enquete (poll) no grupo
+    const sent = await sock.sendMessage(jid, {
+      poll: {
+        name: descricao,
+        values: opcoes,
+        selectableCount: 1,
+      },
+    });
+
+    if (!sent?.key?.id) {
+      return { mensagem: "❌ Erro ao enviar a enquete no grupo. Tenta de novo!" };
+    }
+
+    // Armazena a mensagem no messageStore para decryption de votos
+    storeMessage(sent);
+
+    // Registra a enquete na sessão ativa
+    const result = registrarEnquete(jid, sent.key.id, descricao, opcoes);
+
+    if (!result.ok) {
+      return { mensagem: "❌ Erro ao registrar a enquete no sistema. Tenta de novo!" };
+    }
+
+    console.log(`📝 [LEILÃO] Enquete-S criada: "${descricao}" (ID: ${sent.key.id})`);
+
+    // Retorna null pois a própria poll já é a resposta visual
+    return null;
+  } catch (e) {
+    console.error("❌ [LEILÃO] Erro ao criar enquete-s:", e.message);
+    return { mensagem: "❌ Erro ao criar enquete." };
+  }
+}
+
+// ============================================================
+// !enquete-c — Cria uma enquete Sim/Não com valor fixo
+// ============================================================
+export async function comandoEnqueteC(msg, sock, from, args) {
+  const jid = msg.key.remoteJid;
+
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
+    return { mensagem: "Esse comando só funciona em grupo!" };
+  }
+
+  if (!temSessaoAtiva(jid)) {
+    return { mensagem: "⚠️ Não tem nenhum leilão ativo nesse grupo! Use *!iniciar-leilao* primeiro." };
+  }
+
+  const full = args.join(" ");
+  const partes = full.split("|").map((p) => p.trim()).filter((p) => p.length > 0);
+
+  if (partes.length < 2) {
+    return { mensagem: "⚠️ Formato incorreto! Use: `!enquete-c Descrição | Valor`" };
+  }
+
+  const descricao = partes[0];
+  const valor = partes[1];
+  const opcoes = ["Sim", "Não"];
+
+  try {
+    // Envia a enquete (poll) no grupo
+    const sent = await sock.sendMessage(jid, {
+      poll: {
+        name: `${descricao} - ${valor}`,
+        values: opcoes,
+        selectableCount: 1,
+      },
+    });
+
+    if (!sent?.key?.id) {
+      return { mensagem: "❌ Erro ao enviar a enquete no grupo. Tenta de novo!" };
+    }
+
+    // Armazena a mensagem no messageStore para decryption de votos
+    storeMessage(sent);
+
+    // Registra a enquete na sessão ativa com o valor fixo
+    const result = registrarEnquete(jid, sent.key.id, descricao, opcoes, valor);
+
+    if (!result.ok) {
+      return { mensagem: "❌ Erro ao registrar a enquete no sistema. Tenta de novo!" };
+    }
+
+    console.log(`📝 [LEILÃO] Enquete-C criada: "${descricao}" com valor ${valor} (ID: ${sent.key.id})`);
+
+    // Retorna null pois a própria poll já é a resposta visual
+    return null;
+  } catch (e) {
+    console.error("❌ [LEILÃO] Erro ao criar enquete-c:", e.message);
+    return { mensagem: "❌ Erro ao criar enquete." };
+  }
+}
+
+// ============================================================
+// !config-inicial-leilao — Configura a mensagem de abertura
+// ============================================================
+export async function comandoConfigInicialLeilao(msg, sock, from, args) {
+  const jid = msg.key.remoteJid;
+
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
+    return { mensagem: "Esse comando só funciona em grupo!" };
+  }
+
+  const mensagem = args.join(" ").trim();
+
+  if (!mensagem) {
+    return { mensagem: "❌ Você precisa informar a mensagem! Ex: `!config-inicial-leilao Leilão de testes`" };
+  }
+
+  setMsgInicial(jid, mensagem);
+  
+  // Reagir com emoji para confirmar o cadastro
+  await sock.sendMessage(jid, {
+    react: {
+      text: "👍",
+      key: msg.key
+    }
+  });
+
+  return null; // Não envia texto, apenas a reação
+}
+
+// ============================================================
 // !status-leilao — Mostra o status da sessão ativa
 // ============================================================
 export async function comandoStatusLeilao(msg, sock, from, args) {
   const jid = msg.key.remoteJid;
 
-  if (!jid.endsWith("@g.us")) {
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
     return "Esse comando só funciona em grupo!";
   }
 
@@ -288,7 +457,7 @@ export async function comandoStatusLeilao(msg, sock, from, args) {
 export async function comandoCancelarLeilao(msg, sock, from, args) {
   const jid = msg.key.remoteJid;
 
-  if (!jid.endsWith("@g.us")) {
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
     return "Esse comando só funciona em grupo!";
   }
 
@@ -307,7 +476,7 @@ export async function comandoCancelarLeilao(msg, sock, from, args) {
 export async function comandoConfigMsgLeilao(msg, sock, from, args) {
   const jid = msg.key.remoteJid;
 
-  if (!jid.endsWith("@g.us")) {
+  if (!jid.endsWith("@g.us") && !jid.endsWith("@newsletter")) {
     return "Esse comando só funciona em grupo!";
   }
 

@@ -19,6 +19,7 @@ import { atualizarGrupo_Unique03 } from "../utils/groups.js";
 import { banCheckEntrada_Unique01 } from "../commands/ban.js";
 import { dbGet } from "./database.js";
 import { verificarAnuncioAuto } from "../commands/anuncio-controle.js";
+import { isAllowedPV } from "../utils/pvGuard.js";
 
 // Importação do sistema de leilão
 import {
@@ -507,8 +508,27 @@ async function processarMensagem(msg, sock, upsertType) {
     return;
   }
 
+  // ============================================================
+  // DESEMPACOTAMENTO — ephemeralMessage / viewOnceMessage / viewOnceMessageV2
+  // Quando mensagens temporárias estão ativas no grupo, o WhatsApp encapsula
+  // a mensagem real dentro de msg.message.ephemeralMessage.message.
+  // Sem esse unwrap, o bot não consegue ler o texto nem detectar comandos.
+  // ============================================================
+  if (msg.message.ephemeralMessage?.message) {
+    msg.message = msg.message.ephemeralMessage.message;
+  }
+  if (msg.message.viewOnceMessage?.message) {
+    msg.message = msg.message.viewOnceMessage.message;
+  }
+  if (msg.message.viewOnceMessageV2?.message) {
+    msg.message = msg.message.viewOnceMessageV2.message;
+  }
+  if (msg.message.documentWithCaptionMessage?.message) {
+    msg.message = msg.message.documentWithCaptionMessage.message;
+  }
+
   const jid = msg.key.remoteJid;
-  const isGroup = jid?.endsWith("@g.us");
+  const isGroup = jid?.endsWith("@g.us") || jid?.endsWith("@newsletter");
 
   // ARMAZENAR TODAS AS MENSAGENS NO STORE (para decryption de votos)
   storeMessage(msg);
@@ -560,33 +580,60 @@ async function processarMensagem(msg, sock, upsertType) {
   const rawUser = msg.key.participant || msg.key.remoteJid;
   const fromClean = rawUser.replace(/\D/g, "").slice(-15);
 
+  // ============================================================
+  // BLOQUEIO DE PV — Apenas comandos (!) de usuários autorizados
+  // Envios proativos do bot (relatórios, alertas) NÃO passam por aqui
+  // ============================================================
+  if (!isGroup) {
+    // Se não é um comando (!), ignora silenciosamente — sem responder conversa
+    if (!texto.startsWith("!")) {
+      console.log(`🚫 [PV] Conversa ignorada de ${fromClean}: "${texto.substring(0, 50)}"`);
+      return;
+    }
+
+    // É um comando (!) — verificar se o usuário é autorizado
+    const autorizado = await isAllowedPV(fromClean);
+    if (!autorizado) {
+      console.log(`🚫 [PV] Comando bloqueado — usuário NÃO autorizado: ${fromClean}`);
+      return;
+    }
+
+    // Usuário autorizado com comando — prosseguir para o dispatcher
+    console.log(`✅ [PV] Comando autorizado de ${fromClean}: "${texto}"`);
+  }
+
   let groupName = "";
   if (isGroup) {
-    try {
-      const meta = await sock.groupMetadata(jid);
-      groupName = meta.subject;
-      await atualizarGrupo_Unique03(sock, jid);
-      
-      // Mapear LID <-> PN do remetente da mensagem
-      const sender = meta.participants.find(p => {
-        const pId = p.id?.replace(/@.*/, "");
-        const pLid = p.lid?.replace(/@.*/, "");
-        const pJid = p.jid?.replace(/@.*/, "");
-        return pId === fromClean || pLid === fromClean || pJid === fromClean;
-      });
-      if (sender) {
-        const sLid = sender.lid ? sender.lid.replace(/@.*/, "") : null;
-        const sJid = sender.jid ? sender.jid.replace(/@.*/, "") : null;
-        const sId = sender.id ? sender.id.replace(/@.*/, "") : null;
-        if (sLid && sJid) {
-          atualizarMapeamento(sLid, sJid);
-        } else if (sLid && sId && sLid !== sId) {
-          atualizarMapeamento(sLid, sId);
-        } else if (sJid && sId && sJid !== sId) {
-          atualizarMapeamento(sId, sJid);
+    const isNewsletter = jid?.endsWith("@newsletter");
+    if (isNewsletter) {
+      groupName = "Canal";
+    } else {
+      try {
+        const meta = await sock.groupMetadata(jid);
+        groupName = meta.subject;
+        await atualizarGrupo_Unique03(sock, jid);
+        
+        // Mapear LID <-> PN do remetente da mensagem
+        const sender = meta.participants.find(p => {
+          const pId = p.id?.replace(/@.*/, "");
+          const pLid = p.lid?.replace(/@.*/, "");
+          const pJid = p.jid?.replace(/@.*/, "");
+          return pId === fromClean || pLid === fromClean || pJid === fromClean;
+        });
+        if (sender) {
+          const sLid = sender.lid ? sender.lid.replace(/@.*/, "") : null;
+          const sJid = sender.jid ? sender.jid.replace(/@.*/, "") : null;
+          const sId = sender.id ? sender.id.replace(/@.*/, "") : null;
+          if (sLid && sJid) {
+            atualizarMapeamento(sLid, sJid);
+          } else if (sLid && sId && sLid !== sId) {
+            atualizarMapeamento(sLid, sId);
+          } else if (sJid && sId && sJid !== sId) {
+            atualizarMapeamento(sId, sJid);
+          }
         }
-      }
-    } catch { groupName = "Grupo"; }
+      } catch { groupName = "Grupo"; }
+    }
   }
 
   // Log de console otimizado
@@ -596,7 +643,7 @@ async function processarMensagem(msg, sock, upsertType) {
   botLoggerRegisterEvent_Unique01(msg);
 
   // Verificador automático de anúncios (links, imagens, cards)
-  if (isGroup) {
+  if (isGroup && !jid?.endsWith("@newsletter")) {
     try {
       const bloqueio = await verificarAnuncioAuto(msg, sock, fromClean);
       if (bloqueio) {
@@ -624,12 +671,15 @@ async function processarMensagem(msg, sock, upsertType) {
       const cfg = comandosJSON[cmd];
 
       if (cfg) {
-        const meta = isGroup ? await sock.groupMetadata(jid) : null;
-        const isAdmin = isGroup ? meta.participants.some(p => p.id.replace(/@.*/, "") === fromClean && (p.admin === "admin" || p.admin === "superadmin")) : false;
+        const isNewsletter = jid?.endsWith("@newsletter");
+        const meta = (isGroup && !isNewsletter) ? await sock.groupMetadata(jid) : null;
+        const isAdmin = meta ? meta.participants.some(p => p.id.replace(/@.*/, "") === fromClean && (p.admin === "admin" || p.admin === "superadmin")) : false;
         
         // Verificação de ROOT (Fernando) — Hardcoded + Mapeamento + ENV
         const isRoot = idsMatch(fromClean, ROOT) || ["65060886032554", "554792671477"].includes(fromClean);
 
+        // Em canais (newsletters), não há lista de participantes acessível via groupMetadata da mesma forma que grupos
+        // Portanto, confiamos no isRoot para comandos admin em canais
         if (cfg.admin && !isAdmin && !isRoot) {
           await sock.sendMessage(jid, { text: "Sem permissão." });
           return;
@@ -651,14 +701,6 @@ async function processarMensagem(msg, sock, upsertType) {
       console.error("Erro ao processar comando:", e.message);
     }
   }
-
-  // IA Normal: apenas em PV (DESATIVADO POR SOLICITAÇÃO)
-  /*
-  if (!isGroup) {
-    const resposta = await clawBrainProcess_Unique01(msg);
-    if (resposta) await sock.sendMessage(jid, { text: String(resposta) });
-  }
-  */
 }
 
 startBot_Unique01();

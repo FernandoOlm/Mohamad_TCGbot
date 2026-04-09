@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { aiGenerateReply_Unique01 } from "../core/aiClient.js";
 import { dbRun, dbGet, dbQuery } from "../core/database.js";
+import { idsMatch } from "../utils/userMapper.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -144,7 +145,22 @@ export async function bansGlobais(msg, sock) {
 --------------------------------------------------- */
 export async function banCheckEntrada_Unique01(sock, groupId, usuario) {
   const alvo = usuario.replace(/@.*/, "");
-  const banido = await dbGet(`SELECT * FROM bans WHERE alvo = ?`, [alvo]);
+  const alvoNorm = alvo.replace(/\D/g, "").slice(-15);
+
+  // Busca direta pelo alvo
+  let banido = await dbGet(`SELECT * FROM bans WHERE alvo = ?`, [alvo]);
+
+  // Se não encontrou, tenta com o ID normalizado
+  if (!banido && alvoNorm !== alvo) {
+    banido = await dbGet(`SELECT * FROM bans WHERE alvo = ?`, [alvoNorm]);
+  }
+
+  // Se ainda não encontrou, busca todos e compara via idsMatch (LID ↔ PN)
+  if (!banido) {
+    const todosBans = await dbQuery(`SELECT * FROM bans`, []);
+    banido = todosBans.find(b => idsMatch(alvoNorm, (b.alvo || "").replace(/\D/g, "").slice(-15)));
+  }
+
   if (!banido) return null;
 
   let meta;
@@ -186,13 +202,17 @@ export async function banCheckEntrada_Unique01(sock, groupId, usuario) {
 }
 
 /* ---------------------------------------------------
-   !limpar-bans
+   !limpar-bans (corrigido — usa idsMatch para LID ↔ PN)
 --------------------------------------------------- */
 export async function limparBans(msg, sock) {
   const groupId = msg.key.remoteJid;
   if (!groupId.endsWith("@g.us")) return { status: "erro", motivo: "nao_grupo" };
 
   const rows = await dbQuery(`SELECT * FROM bans`);
+  if (!rows.length) {
+    return { status: "ok", tipo: "limpar_bans", mensagem: "✅ Nenhum banido registrado na lista global." };
+  }
+
   let meta;
   try {
     meta = await sock.groupMetadata(groupId);
@@ -200,18 +220,53 @@ export async function limparBans(msg, sock) {
     return { status: "erro", mensagem: "Erro ao acessar grupo" };
   }
 
-  const participantes = meta.participants.map((p) => ({ id: p.id.replace(/@.*/, ""), admin: p.admin }));
+  const nomeGrupo = meta.subject || "Grupo";
+
+  // Normalizar alvos banidos
+  const alvosNormalizados = rows.map(b => (b.alvo || "").replace(/\D/g, "").slice(-15));
+
   let removidos = 0;
 
-  for (const b of rows) {
-    const alvoInfo = participantes.find((p) => p.id === b.alvo);
-    if (!alvoInfo || alvoInfo.admin) continue;
+  for (const p of meta.participants) {
+    // Nunca remove admin
+    if (p.admin === "admin" || p.admin === "superadmin") continue;
 
-    const sucesso = await expulsarDoGrupo(sock, groupId, b.alvo);
-    if (sucesso) {
+    // Extrair todos os IDs possíveis do participante
+    const idsP = new Set();
+    if (p.id) idsP.add(p.id.split(":")[0].replace(/@.*/, "").replace(/\D/g, "").slice(-15));
+    if (p.lid) idsP.add(p.lid.replace(/@.*/, "").replace(/\D/g, "").slice(-15));
+    if (p.jid) idsP.add(p.jid.replace(/@.*/, "").replace(/\D/g, "").slice(-15));
+
+    let encontrouBan = false;
+    for (const idP of idsP) {
+      for (const alvoBan of alvosNormalizados) {
+        if (idP === alvoBan || idsMatch(idP, alvoBan)) {
+          encontrouBan = true;
+          break;
+        }
+      }
+      if (encontrouBan) break;
+    }
+
+    if (!encontrouBan) continue;
+
+    // Tentar expulsar com cada ID possível
+    let expulso = false;
+    for (const idP of idsP) {
+      if (expulso) break;
+      expulso = await expulsarDoGrupo(sock, groupId, idP);
+    }
+
+    if (expulso) {
       removidos++;
+      console.log(`🧹 [LIMPAR-BANS] Removido: ${[...idsP].join(" / ")} de ${nomeGrupo}`);
       await new Promise((r) => setTimeout(r, 800));
     }
   }
-  return { status: "ok", tipo: "limpar_bans", mensagem: `${removidos} banidos removidos do grupo.` };
+
+  if (removidos === 0) {
+    return { status: "ok", tipo: "limpar_bans", mensagem: `✅ *${nomeGrupo}* está limpo — nenhum banido encontrado no grupo.` };
+  }
+
+  return { status: "ok", tipo: "limpar_bans", mensagem: `🧹 *${nomeGrupo}* limpo!\n🚫 ${removidos} banido(s) removido(s).` };
 }
