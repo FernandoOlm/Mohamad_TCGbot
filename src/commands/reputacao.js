@@ -1,5 +1,5 @@
 // ================================
-// reputacao.js (GLOBAL + DETECÇÃO INTELIGENTE + ÚLTIMO MOTIVO + BUSCA STATUS)
+// reputacao.js (GLOBAL + DETECÇÃO INTELIGENTE + ÚLTIMO MOTIVO + BUSCA STATUS + LIMPAR STATUS)
 // ================================
 import fs from "fs";
 import path from "path";
@@ -310,6 +310,46 @@ export async function buscaStatus(msg, sock, from, args) {
   } catch (err) {
     console.error("ERRO BUSCA STATUS:", err);
     return { texto: "❌ Erro ao buscar grupos em comum." };
+  }
+}
+
+// ================================
+// LIMPAR STATUS (Bans + Referências)
+// ================================
+export async function comandoLimparStatus(msg, sock, from, args) {
+  try {
+    const jid = msg.key.remoteJid;
+    const numeros = extrairNumerosUniversal(msg);
+    
+    if (!numeros.length) {
+      return { texto: "❌ Por favor, responda a um vCard para limpar o status." };
+    }
+
+    const numeroAlvo = numeros[0];
+    const id = hashNumeroGlobal(numeroAlvo);
+    
+    // 1. Limpar do JSON local (Bans locais, Alertas, Referências, Score)
+    const db = loadDB();
+    if (db["global"] && db["global"][id]) {
+      delete db["global"][id];
+      saveDB(db);
+    }
+
+    // 2. Limpar do SQLite (Bans Globais)
+    await dbRun(`DELETE FROM bans WHERE alvo = ?`, [numeroAlvo]);
+
+    // 3. Reagir com joinha
+    await sock.sendMessage(jid, {
+      react: {
+        text: "👍",
+        key: msg.key,
+      },
+    });
+
+    return null;
+  } catch (err) {
+    console.error("ERRO LIMPAR STATUS:", err);
+    return { texto: "❌ Erro ao limpar status." };
   }
 }
 

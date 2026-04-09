@@ -177,11 +177,21 @@
   "function": "redFlag",
   "admin": true
 },
-"!status": {
-  "file": "../commands/reputacao.js",
-  "function": "status",
-  "admin": false
-},
+  "!status": {
+    "file": "../commands/reputacao.js",
+    "function": "status",
+    "admin": true
+  },
+  "!busca-status": {
+    "file": "../commands/reputacao.js",
+    "function": "buscaStatus",
+    "admin": true
+  },
+  "!limpar-status": {
+    "file": "../commands/reputacao.js",
+    "function": "comandoLimparStatus",
+    "admin": true
+  },
 "!clean_rep": {
   "file": "../commands/reputacao.js",
   "function": "cleanRep",
@@ -360,11 +370,5 @@
     "file": "../commands/add-ref.js",
     "function": "comandoAddRef",
     "admin": true
-  },
-    "!busca-status": {
-    "file": "../commands/reputacao.js",
-    "function": "buscaStatus",
-    "admin": true
   }
-
 }
