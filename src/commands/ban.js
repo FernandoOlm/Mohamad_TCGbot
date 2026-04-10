@@ -60,15 +60,35 @@ export async function ban(msg, sock, fromClean, args) {
   const groupId = msg.key.remoteJid;
   if (!groupId.endsWith("@g.us")) return { status: "erro", motivo: "nao_grupo" };
 
-  const alvosTags = args.filter((a) => a.startsWith("@"));
-  if (!alvosTags.length) return { status: "erro", motivo: "formato_invalido" };
+  let alvos = [];
+  const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
+
+  // 1. Prioridade: vCard respondido
+  if (quoted?.contactMessage || quoted?.contactsArrayMessage) {
+    const contacts = quoted.contactMessage ? [quoted.contactMessage] : quoted.contactsArrayMessage.contacts;
+    for (const contact of contacts) {
+      const vcard = contact.vcard;
+      const match = vcard.match(/waid=(\d+)/i) || vcard.match(/TEL;[^:]+:(\d+)/i);
+      if (match) alvos.push(match[1]);
+    }
+  }
+
+  // 2. Fallback: Menções (@)
+  if (alvos.length === 0) {
+    const alvosTags = args.filter((a) => a.startsWith("@"));
+    for (const alvoTag of alvosTags) {
+      alvos.push(alvoTag.replace("@", "").replace(/\D/g, ""));
+    }
+  }
+
+  if (!alvos.length) return { status: "erro", motivo: "formato_invalido" };
 
   const motivoParts = args.filter((a) => !a.startsWith("@"));
   const motivo = motivoParts.length > 0 ? motivoParts.join(" ") : "sem motivo informado";
 
   let banidos = [];
-  for (const alvoTag of alvosTags) {
-    const alvo = alvoTag.replace("@", "").replace(/\D/g, "");
+  for (const alvo of alvos) {
+    // Nunca banir a si mesmo (o admin que enviou o comando)
     if (alvo === fromClean) continue;
 
     await dbRun(
