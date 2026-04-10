@@ -708,15 +708,28 @@ startBot_Unique01();
 // Sistema de Ações Agendadas
 setInterval(async () => {
   try {
-    const agora = new Date();
+    // Ajuste de Timezone para Brasília (GMT-3)
+    // O servidor geralmente está em UTC. Subtraímos 3 horas do UTC para obter o horário de Brasília.
+    const agoraUTC = new Date();
+    const agoraBrasilia = new Date(agoraUTC.getTime() - (3 * 60 * 60 * 1000));
+    
     const REM_PATH = path.resolve("src/data/reminders.json");
     if (fs.existsSync(REM_PATH)) {
       const dbRem = JSON.parse(fs.readFileSync(REM_PATH, "utf8"));
-      const gatilhos = dbRem.lembretes.filter(l => l.ativo !== false && new Date(l.quando) <= agora);
+      
+      // Filtra lembretes que devem ser disparados (comparando com o horário de Brasília)
+      const gatilhos = dbRem.lembretes.filter(l => {
+        if (l.ativo === false) return false;
+        const dataLembrete = new Date(l.quando);
+        return dataLembrete <= agoraBrasilia;
+      });
+
       for (const l of gatilhos) {
         const { enviar_lembrete } = await import("../commands/enviar-lembrete.js");
         await enviar_lembrete(l, globalThis.sock);
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error("❌ Erro no loop de lembretes:", e.message);
+  }
 }, 10000);
